@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 
 import { ErrorState, LoadingState } from "../../components/AsyncState";
 import { SyncEventTimeline } from "../sync/SyncEventTimeline";
+import { SyncJobQueue } from "../sync/SyncJobQueue";
 import { SyncStatusPanel } from "../sync/SyncStatusPanel";
 import { MessageBody } from "./MessageBody";
 import {
@@ -11,23 +12,29 @@ import {
   cancelSync,
   getCurrentAccount,
   getMessage,
+  getSyncBatch,
   getSyncStatus,
   listAllMessages,
   listFolders,
   listMessages,
   listSyncEvents,
+  listSyncJobs,
   refreshFolders,
   triggerSync,
+  triggerSyncAll,
 } from "../../lib/api";
 import { formatDateTime, formatSyncState } from "../../lib/format";
 
 type MailView = "all" | string;
+
+const ACTIVE_BATCH_STATES = ["queued", "running"];
 
 export function MailPage() {
   const queryClient = useQueryClient();
   const [view, setView] = useState<MailView>("all");
   const [messageId, setMessageId] = useState<string | null>(null);
   const [showSyncDetail, setShowSyncDetail] = useState(false);
+  const [batchId, setBatchId] = useState<string | null>(null);
 
   const accountQuery = useQuery({
     queryKey: ["account"],
@@ -84,6 +91,31 @@ export function MailPage() {
     retry: false,
   });
 
+  const batchQuery = useQuery({
+    queryKey: ["sync-batch", batchId],
+    queryFn: () => getSyncBatch(batchId as string),
+    enabled: Boolean(batchId),
+    refetchInterval: (query) =>
+      ACTIVE_BATCH_STATES.includes(query.state.data?.state ?? "")
+        ? 800
+        : false,
+    retry: false,
+  });
+
+  const jobsQuery = useQuery({
+    queryKey: ["sync-jobs"],
+    queryFn: () => listSyncJobs(30),
+    enabled: showSyncDetail,
+    refetchInterval: 1500,
+    retry: false,
+  });
+
+  const batch = batchQuery.data;
+  const batchRunning = ACTIVE_BATCH_STATES.includes(batch?.state ?? "");
+  const batchDone = batch
+    ? batch.success + batch.failed + batch.cancelled
+    : 0;
+
   const refreshFoldersMutation = useMutation({
     mutationFn: refreshFolders,
     onSuccess: (nextFolders) => {
@@ -116,18 +148,49 @@ export function MailPage() {
     mutationFn: () => triggerSync(selectedFolder!.name),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sync-status"] });
+      queryClient.invalidateQueries({ queryKey: ["sync-jobs"] });
       queryClient.invalidateQueries({ queryKey: ["messages"] });
       queryClient.invalidateQueries({ queryKey: ["folders"] });
     },
   });
 
+  const triggerAllMutation = useMutation({
+    mutationFn: () => triggerSyncAll(),
+    onSuccess: (result) => {
+      if (result.queued > 0) {
+        setBatchId(result.batch_id);
+      }
+      queryClient.invalidateQueries({ queryKey: ["sync-jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["sync-status"] });
+    },
+  });
+
   const cancelMutation = useMutation({
-    mutationFn: () => cancelSync(selectedFolder!.name),
+    mutationFn: () =>
+      cancelSync(
+        batchRunning && batchId
+          ? { batchId }
+          : { folder: selectedFolder!.name },
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sync-status"] });
+      queryClient.invalidateQueries({ queryKey: ["sync-jobs"] });
       queryClient.invalidateQueries({ queryKey: ["messages"] });
     },
   });
+
+  const batchState = batch?.state;
+
+  useEffect(() => {
+    if (!batchState || ACTIVE_BATCH_STATES.includes(batchState)) {
+      return;
+    }
+    // The batch just settled: pull in whatever it fetched.
+    queryClient.invalidateQueries({ queryKey: ["messages"] });
+    queryClient.invalidateQueries({ queryKey: ["folders"] });
+    queryClient.invalidateQueries({ queryKey: ["sync-status"] });
+    queryClient.invalidateQueries({ queryKey: ["sync-jobs"] });
+  }, [batchState, queryClient]);
 
   if (
     foldersQuery.error instanceof ApiError &&
@@ -276,8 +339,19 @@ export function MailPage() {
           <button
             type="button"
             className="rounded border border-slate-300 px-2 py-1 font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40 dark:border-gh-border dark:text-gh-fg dark:hover:bg-gh-overlay"
+            onClick={() => triggerAllMutation.mutate()}
+            disabled={triggerAllMutation.isPending || batchRunning}
+            data-testid="mail-sync-all"
+          >
+            {batchRunning ? "同步中..." : "同步全部"}
+          </button>
+          <button
+            type="button"
+            className="rounded border border-slate-300 px-2 py-1 font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40 dark:border-gh-border dark:text-gh-fg dark:hover:bg-gh-overlay"
             onClick={() => cancelMutation.mutate()}
-            disabled={!selectedFolder || cancelMutation.isPending}
+            disabled={
+              (!selectedFolder && !batchRunning) || cancelMutation.isPending
+            }
           >
             取消
           </button>
@@ -295,6 +369,44 @@ export function MailPage() {
             同步详情
           </button>
         </div>
+
+        {batch ? (
+          <div
+            className="shrink-0 border-b border-slate-100 px-4 py-2 text-xs dark:border-gh-border"
+            data-testid="mail-batch-progress"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-medium text-slate-700 dark:text-gh-fg">
+                同步全部 {batchDone}/{batch.total}
+              </span>
+              <span
+                className="truncate text-slate-400 dark:text-gh-fg-subtle"
+                data-testid="mail-batch-current"
+              >
+                {batchRunning
+                  ? batch.current_folder ?? "准备中..."
+                  : formatSyncState(batch.state)}
+              </span>
+            </div>
+            <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-gh-overlay">
+              <div
+                className="h-full rounded-full bg-sky-500 transition-all"
+                style={{
+                  width: `${
+                    batch.total
+                      ? Math.round((batchDone / batch.total) * 100)
+                      : 0
+                  }%`,
+                }}
+              />
+            </div>
+            {batch.last_error && !batchRunning ? (
+              <div className="mt-1 text-red-600 dark:text-gh-danger">
+                {batch.failed} 个文件夹失败：{batch.last_error}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           {messagesLoading ? (
@@ -376,6 +488,16 @@ export function MailPage() {
                 />
               ) : null}
               <SyncEventTimeline events={syncEventsQuery.data ?? []} />
+              {jobsQuery.error ? (
+                <ErrorState
+                  message={
+                    jobsQuery.error instanceof Error
+                      ? jobsQuery.error.message
+                      : "读取同步队列失败"
+                  }
+                />
+              ) : null}
+              <SyncJobQueue jobs={jobsQuery.data ?? []} />
             </>
           ) : (
             <>

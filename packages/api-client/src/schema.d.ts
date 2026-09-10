@@ -157,6 +157,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sync/trigger-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trigger All Sync
+         * @description Queue every folder that still exists on the server.
+         *
+         *     Local folders left over from a previously configured mailbox are skipped:
+         *     the server would answer every one of them with "mailbox not found".
+         */
+        post: operations["trigger_all_sync_api_v1_sync_trigger_all_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sync/cancel": {
         parameters: {
             query?: never;
@@ -168,6 +191,40 @@ export interface paths {
         put?: never;
         /** Cancel Sync */
         post: operations["cancel_sync_api_v1_sync_cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sync/batches/{batch_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Batch */
+        get: operations["get_batch_api_v1_sync_batches__batch_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sync/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Sync Jobs */
+        get: operations["list_sync_jobs_api_v1_sync_jobs_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -428,18 +485,43 @@ export interface components {
             /** Account Email */
             account_email?: string | null;
         };
+        /** SyncBatchRead */
+        SyncBatchRead: {
+            /**
+             * Batch Id
+             * Format: uuid
+             */
+            batch_id: string;
+            /** Total */
+            total: number;
+            /** Queued */
+            queued: number;
+            /** Running */
+            running: number;
+            /** Success */
+            success: number;
+            /** Failed */
+            failed: number;
+            /** Cancelled */
+            cancelled: number;
+            /** State */
+            state: string;
+            /** Current Folder */
+            current_folder: string | null;
+            /** Last Error */
+            last_error: string | null;
+        };
         /** SyncCancelRequest */
         SyncCancelRequest: {
-            /**
-             * Folder
-             * @default INBOX
-             */
-            folder: string;
+            /** Folder */
+            folder?: string | null;
+            /** Batch Id */
+            batch_id?: string | null;
         };
         /** SyncCancelResponse */
         SyncCancelResponse: {
             /** Cancelled */
-            cancelled: boolean;
+            cancelled: number;
         };
         /** SyncEventRead */
         SyncEventRead: {
@@ -465,6 +547,45 @@ export interface components {
             duration_ms: number | null;
             /** Error Type */
             error_type: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** SyncJobRead */
+        SyncJobRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Folder Id
+             * Format: uuid
+             */
+            folder_id: string;
+            /** Folder Name */
+            folder_name: string;
+            /**
+             * Batch Id
+             * Format: uuid
+             */
+            batch_id: string;
+            /** State */
+            state: string;
+            /** Priority */
+            priority: number;
+            /** Attempts */
+            attempts: number;
+            /** Last Error */
+            last_error: string | null;
+            /** Not Before */
+            not_before: string | null;
+            /** Started At */
+            started_at: string | null;
+            /** Finished At */
+            finished_at: string | null;
             /**
              * Created At
              * Format: date-time
@@ -499,6 +620,14 @@ export interface components {
             /** Last Sync At */
             last_sync_at: string | null;
         };
+        /**
+         * SyncTriggerAllRequest
+         * @description An empty body syncs every folder that still exists on the server.
+         */
+        SyncTriggerAllRequest: {
+            /** Folder Names */
+            folder_names?: string[] | null;
+        };
         /** SyncTriggerRequest */
         SyncTriggerRequest: {
             /**
@@ -506,6 +635,23 @@ export interface components {
              * @default INBOX
              */
             folder: string;
+        };
+        /** SyncTriggerResponse */
+        SyncTriggerResponse: {
+            /**
+             * Batch Id
+             * Format: uuid
+             */
+            batch_id: string;
+            /** Job Ids */
+            job_ids: string[];
+            /** Queued */
+            queued: number;
+            /**
+             * Skipped
+             * @default 0
+             */
+            skipped: number;
         };
         /** ValidationError */
         ValidationError: {
@@ -771,7 +917,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SyncStatusRead"];
+                    "application/json": components["schemas"]["SyncTriggerResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trigger_all_sync_api_v1_sync_trigger_all_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncTriggerAllRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncTriggerResponse"];
                 };
             };
             /** @description Validation Error */
@@ -805,6 +984,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SyncCancelResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_batch_api_v1_sync_batches__batch_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncBatchRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sync_jobs_api_v1_sync_jobs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncJobRead"][];
                 };
             };
             /** @description Validation Error */

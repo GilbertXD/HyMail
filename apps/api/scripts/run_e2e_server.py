@@ -83,6 +83,12 @@ async def main() -> None:
     mock_server.add_message(make_raw_message("E2E One", "hello e2e"), uid=1)
     mock_server.add_message(make_raw_message("E2E Two", "second"), uid=2)
     mock_server.add_message(make_html_message("E2E HTML"), uid=3)
+    # A second mailbox with mail, so "sync all" has more than one job.
+    mock_server.add_message(
+        make_raw_message("E2E Sent", "sent body"),
+        mailbox="Sent",
+        uid=1,
+    )
 
     def client_factory(_account) -> ImapClient:
         return ImapClient(

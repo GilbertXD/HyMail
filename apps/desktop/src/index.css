@@ -19,6 +19,8 @@
   --color-gh-accent-emphasis: #1f6feb;
   --color-gh-danger: #f85149;
   --color-gh-danger-subtle: #f8514926;
+  --color-gh-success: #3fb950;
+  --color-gh-success-subtle: #2ea04326;
 }
 
 :root {

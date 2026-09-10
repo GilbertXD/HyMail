@@ -354,7 +354,49 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SyncStatusRead"
+                  "$ref": "#/components/schemas/SyncTriggerResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sync/trigger-all": {
+      "post": {
+        "tags": [
+          "sync"
+        ],
+        "summary": "Trigger All Sync",
+        "description": "Queue every folder that still exists on the server.\n\nLocal folders left over from a previously configured mailbox are skipped:\nthe server would answer every one of them with \"mailbox not found\".",
+        "operationId": "trigger_all_sync_api_v1_sync_trigger_all_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncTriggerAllRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncTriggerResponse"
                 }
               }
             }
@@ -396,6 +438,98 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SyncCancelResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sync/batches/{batch_id}": {
+      "get": {
+        "tags": [
+          "sync"
+        ],
+        "summary": "Get Batch",
+        "operationId": "get_batch_api_v1_sync_batches__batch_id__get",
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Batch Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncBatchRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sync/jobs": {
+      "get": {
+        "tags": [
+          "sync"
+        ],
+        "summary": "List Sync Jobs",
+        "operationId": "list_sync_jobs_api_v1_sync_jobs_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SyncJobRead"
+                  },
+                  "title": "Response List Sync Jobs Api V1 Sync Jobs Get"
                 }
               }
             }
@@ -1200,12 +1334,103 @@
         ],
         "title": "MessageSummary"
       },
+      "SyncBatchRead": {
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Batch Id"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "queued": {
+            "type": "integer",
+            "title": "Queued"
+          },
+          "running": {
+            "type": "integer",
+            "title": "Running"
+          },
+          "success": {
+            "type": "integer",
+            "title": "Success"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "cancelled": {
+            "type": "integer",
+            "title": "Cancelled"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "current_folder": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Folder"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "batch_id",
+          "total",
+          "queued",
+          "running",
+          "success",
+          "failed",
+          "cancelled",
+          "state",
+          "current_folder",
+          "last_error"
+        ],
+        "title": "SyncBatchRead"
+      },
       "SyncCancelRequest": {
         "properties": {
           "folder": {
-            "type": "string",
-            "title": "Folder",
-            "default": "INBOX"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folder"
+          },
+          "batch_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
           }
         },
         "type": "object",
@@ -1214,7 +1439,7 @@
       "SyncCancelResponse": {
         "properties": {
           "cancelled": {
-            "type": "boolean",
+            "type": "integer",
             "title": "Cancelled"
           }
         },
@@ -1336,6 +1561,109 @@
         ],
         "title": "SyncEventRead"
       },
+      "SyncJobRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "folder_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Folder Id"
+          },
+          "folder_name": {
+            "type": "string",
+            "title": "Folder Name"
+          },
+          "batch_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Batch Id"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "priority": {
+            "type": "integer",
+            "title": "Priority"
+          },
+          "attempts": {
+            "type": "integer",
+            "title": "Attempts"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "not_before": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Not Before"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "folder_id",
+          "folder_name",
+          "batch_id",
+          "state",
+          "priority",
+          "attempts",
+          "last_error",
+          "not_before",
+          "started_at",
+          "finished_at",
+          "created_at"
+        ],
+        "title": "SyncJobRead"
+      },
       "SyncStatusRead": {
         "properties": {
           "account_id": {
@@ -1436,6 +1764,27 @@
         ],
         "title": "SyncStatusRead"
       },
+      "SyncTriggerAllRequest": {
+        "properties": {
+          "folder_names": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folder Names"
+          }
+        },
+        "type": "object",
+        "title": "SyncTriggerAllRequest",
+        "description": "An empty body syncs every folder that still exists on the server."
+      },
       "SyncTriggerRequest": {
         "properties": {
           "folder": {
@@ -1446,6 +1795,39 @@
         },
         "type": "object",
         "title": "SyncTriggerRequest"
+      },
+      "SyncTriggerResponse": {
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Batch Id"
+          },
+          "job_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Job Ids"
+          },
+          "queued": {
+            "type": "integer",
+            "title": "Queued"
+          },
+          "skipped": {
+            "type": "integer",
+            "title": "Skipped",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "batch_id",
+          "job_ids",
+          "queued"
+        ],
+        "title": "SyncTriggerResponse"
       },
       "ValidationError": {
         "properties": {

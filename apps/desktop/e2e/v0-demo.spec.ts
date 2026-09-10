@@ -83,3 +83,40 @@ test("theme toggle switches the shell and survives a reload", async ({
     darkCanvas,
   );
 });
+
+test("sync all folders in one click", async ({ page }) => {
+  // Self-contained: each test gets a fresh browser context, so the account has
+  // to be configured again even though the database is shared.
+  await page.goto("/setup");
+  await page.getByPlaceholder("you@example.com").fill("user@example.com");
+  await page.getByRole("combobox").selectOption("custom");
+  await page.getByPlaceholder("imap.example.com").fill("127.0.0.1");
+  await page.getByPlaceholder("993").fill(IMAP_PORT);
+  await page.getByRole("checkbox").uncheck();
+  await page.getByPlaceholder("IMAP 授权码").fill("secret");
+  await page.getByRole("button", { name: "保存账号" }).click();
+  await expect(page.getByText("账号已保存")).toBeVisible();
+
+  await page.getByRole("link", { name: "邮件" }).click();
+  await page.getByRole("button", { name: "刷新文件夹" }).click();
+
+  await page.getByTestId("mail-sync-all").click();
+
+  const progress = page.getByTestId("mail-batch-progress");
+  await expect(progress).toBeVisible();
+  // Two mailboxes carry mail in the mock: INBOX and Sent.
+  await expect(progress).toContainText("同步全部 2/2", { timeout: 20_000 });
+  await expect(page.getByTestId("mail-batch-current")).toHaveText("已完成");
+
+  // The queue view reports the individual jobs. The database is shared with
+  // earlier tests, so assert on content rather than an exact row count.
+  await page.getByTestId("mail-sync-detail-toggle").click();
+  await expect(page.getByText("同步队列")).toBeVisible();
+  const rows = page.getByTestId("sync-job-row");
+  await expect(rows.filter({ hasText: "INBOX" }).first()).toContainText(
+    "已完成",
+  );
+  await expect(rows.filter({ hasText: "Sent" }).first()).toContainText(
+    "已完成",
+  );
+});

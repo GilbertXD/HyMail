@@ -23,6 +23,9 @@ export type MessageSummary = components["schemas"]["MessageSummary"];
 export type MessageDetail = components["schemas"]["MessageDetail"];
 export type SyncStatusRead = components["schemas"]["SyncStatusRead"];
 export type SyncEventRead = components["schemas"]["SyncEventRead"];
+export type SyncTriggerResponse = components["schemas"]["SyncTriggerResponse"];
+export type SyncBatchRead = components["schemas"]["SyncBatchRead"];
+export type SyncJobRead = components["schemas"]["SyncJobRead"];
 
 export class ApiError extends Error {
   status: number;
@@ -103,7 +106,9 @@ export async function getSyncStatus(
   );
 }
 
-export async function triggerSync(folder = "INBOX"): Promise<SyncStatusRead> {
+export async function triggerSync(
+  folder = "INBOX",
+): Promise<SyncTriggerResponse> {
   return unwrap(
     await apiClient.POST("/api/v1/sync/trigger", {
       body: { folder },
@@ -111,12 +116,44 @@ export async function triggerSync(folder = "INBOX"): Promise<SyncStatusRead> {
   );
 }
 
+/** Queue every folder the server still has. */
+export async function triggerSyncAll(
+  folderNames?: string[],
+): Promise<SyncTriggerResponse> {
+  return unwrap(
+    await apiClient.POST("/api/v1/sync/trigger-all", {
+      body: { folder_names: folderNames ?? null },
+    }),
+  );
+}
+
+export async function getSyncBatch(
+  batchId: string,
+): Promise<SyncBatchRead> {
+  return unwrap(
+    await apiClient.GET("/api/v1/sync/batches/{batch_id}", {
+      params: { path: { batch_id: batchId } },
+    }),
+  );
+}
+
+export async function listSyncJobs(limit = 50): Promise<SyncJobRead[]> {
+  return unwrap(
+    await apiClient.GET("/api/v1/sync/jobs", {
+      params: { query: { limit } },
+    }),
+  );
+}
+
 export async function cancelSync(
-  folder = "INBOX",
-): Promise<{ cancelled: boolean }> {
+  options: { folder?: string; batchId?: string } = {},
+): Promise<{ cancelled: number }> {
   return unwrap(
     await apiClient.POST("/api/v1/sync/cancel", {
-      body: { folder },
+      body: {
+        folder: options.folder ?? null,
+        batch_id: options.batchId ?? null,
+      },
     }),
   );
 }
