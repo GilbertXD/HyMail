@@ -146,3 +146,29 @@ modified UTF-7 乱码文件夹名就地修复。
 
     uv run pytest tests/sync/test_engine_reconcile.py -v
 
+## 10. 双向旗标与 Outbox
+
+打开一封邮件，点「标为已读」或「加星」：
+
+- 界面立刻变化（乐观更新），同时排进 Outbox
+- 展开「同步详情」，最下面「待发送的修改」能看到这条改动
+- 稍后它变成「已发送」，说明服务器已经收到
+
+验证真的写到了服务器：用控制接口读回来
+
+    Invoke-RestMethod "http://127.0.0.1:8000/__e2e/messages/flags?uid=2&mailbox=INBOX"
+
+反过来，在服务器上改旗标再点「对账」，本地会跟着变：
+
+    $body = '{"uid": 2, "mailbox": "INBOX", "flags": ["\\Flagged"], "add": true}'
+    Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/__e2e/messages/flags -Body $body -ContentType application/json
+
+**失败与丢弃**：把 demo server 停掉再点「加星」，改动会进入重试；超过最大重试后
+在 Outbox 里显示「发送失败」，可以「重试」或「丢弃」。丢弃会把本地值改回服务器
+最后一次报告的状态。
+
+自动化测试覆盖：
+
+    uv run pytest tests/sync/test_outbox.py tests/api/test_outbox_api.py -v
+
+
