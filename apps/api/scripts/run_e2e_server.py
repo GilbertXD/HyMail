@@ -9,6 +9,7 @@ import uvicorn
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import hymail_api.db.models  # noqa: F401
+from hymail_api.api.security import DEFAULT_ALLOWED_ORIGINS
 from hymail_api.db.base import Base
 from hymail_api.db.session import create_engine
 from hymail_api.imap.client import ImapClient
@@ -17,12 +18,41 @@ from hymail_api.main import create_app
 
 API_PORT = int(os.environ.get("HYMAIL_E2E_API_PORT", "8000"))
 IMAP_PORT = int(os.environ.get("HYMAIL_E2E_IMAP_PORT", "11430"))
+WEB_PORT = int(os.environ.get("HYMAIL_E2E_WEB_PORT", "5173"))
 USERNAME = "user@example.com"
 PASSWORD = "secret"
+
+# The Origin allow-list is port-specific, so a non-default web port has to be
+# added or every API call from the page would be rejected.
+ALLOWED_ORIGINS = [
+    *DEFAULT_ALLOWED_ORIGINS,
+    f"http://127.0.0.1:{WEB_PORT}",
+    f"http://localhost:{WEB_PORT}",
+]
 
 
 def make_raw_message(subject: str, body: str) -> bytes:
     message = MIMEText(body, "plain", "utf-8")
+    message["Subject"] = subject
+    message["From"] = "Alice <alice@example.com>"
+    message["To"] = "Bob <bob@example.com>"
+    message["Date"] = "Mon, 01 Jan 2024 00:00:00 +0000"
+    return message.as_bytes()
+
+
+def make_html_message(subject: str) -> bytes:
+    """An email that tries to restyle the whole document.
+
+    Real marketing mail ships exactly this kind of rule, which is what made
+    the app's own font change whenever an HTML message was opened.
+    """
+    message = MIMEText(
+        "<html><head>"
+        '<style>html,body{font-family:"Comic Sans MS"}</style>'
+        "</head><body><p>rendered html body</p></body></html>",
+        "html",
+        "utf-8",
+    )
     message["Subject"] = subject
     message["From"] = "Alice <alice@example.com>"
     message["To"] = "Bob <bob@example.com>"
@@ -52,6 +82,7 @@ async def main() -> None:
     await mock_server.start(host="127.0.0.1", port=IMAP_PORT)
     mock_server.add_message(make_raw_message("E2E One", "hello e2e"), uid=1)
     mock_server.add_message(make_raw_message("E2E Two", "second"), uid=2)
+    mock_server.add_message(make_html_message("E2E HTML"), uid=3)
 
     def client_factory(_account) -> ImapClient:
         return ImapClient(
@@ -66,6 +97,7 @@ async def main() -> None:
     app = create_app(
         session_factory=session_factory,
         imap_client_factory=client_factory,
+        allowed_origins=ALLOWED_ORIGINS,
     )
     config = uvicorn.Config(
         app,

@@ -1,16 +1,48 @@
 @import "tailwindcss";
 
+/* Tailwind's dark: variant follows prefers-color-scheme by default. Making it
+   class-driven lets the user override the system from the UI. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* GitHub's dark palette. Referenced only from dark: variants, so the light
+     theme keeps its existing slate colours. */
+  --color-gh-canvas: #0d1117;
+  --color-gh-subtle: #161b22;
+  --color-gh-overlay: #21262d;
+  --color-gh-border: #30363d;
+  --color-gh-fg: #e6edf3;
+  --color-gh-fg-muted: #8b949e;
+  --color-gh-fg-subtle: #6e7681;
+  --color-gh-accent: #58a6ff;
+  --color-gh-accent-subtle: #388bfd26;
+  --color-gh-accent-emphasis: #1f6feb;
+  --color-gh-danger: #f85149;
+  --color-gh-danger-subtle: #f8514926;
+}
+
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #f8fafc;
-  color: #0f172a;
+}
+
+:root.dark {
+  color-scheme: dark;
 }
 
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+/* Set before first paint by the inline script in index.html, which is what
+   keeps a dark-mode reload from flashing white. */
+:root.dark body {
+  background: #0d1117;
+  color: #e6edf3;
 }
 
 #root {

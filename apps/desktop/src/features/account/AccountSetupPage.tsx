@@ -91,13 +91,17 @@ export function AccountSetupPage() {
     accountQuery.error instanceof ApiError && accountQuery.error.status === 404;
 
   if (accountQuery.isLoading) {
-    return <div className="p-6 text-sm text-slate-500">读取账号配置...</div>;
+    return (
+      <div className="p-6 text-sm text-slate-500 dark:text-gh-fg-muted">
+        读取账号配置...
+      </div>
+    );
   }
 
   if (accountQuery.error && !accountMissing) {
     return (
       <div className="p-6">
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-gh-danger dark:bg-gh-danger-subtle dark:text-gh-danger">
           {accountQuery.error instanceof Error
             ? accountQuery.error.message
             : "读取账号配置失败"}
@@ -166,20 +170,20 @@ function AccountSetupForm({
       <div className="mx-auto max-w-4xl space-y-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">账号配置</h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-slate-500 dark:text-gh-fg-muted">
             配置一个 IMAP 账号，授权码会使用 Windows DPAPI 加密保存。
           </p>
         </div>
 
         <form
-          className="space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
+          className="space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-gh-border dark:bg-gh-subtle"
           onSubmit={handleSubmit}
         >
           <div className="grid gap-5 md:grid-cols-2">
             <label className="space-y-2 text-sm">
-              <span className="font-medium text-slate-700">邮箱</span>
+              <span className="font-medium text-slate-700 dark:text-gh-fg">邮箱</span>
               <input
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-sky-500"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-sky-500 dark:border-gh-border dark:bg-gh-canvas dark:text-gh-fg"
                 value={form.email}
                 onChange={(event) => updateField("email", event.target.value)}
                 placeholder="you@example.com"
@@ -188,9 +192,9 @@ function AccountSetupForm({
             </label>
 
             <label className="space-y-2 text-sm">
-              <span className="font-medium text-slate-700">显示名</span>
+              <span className="font-medium text-slate-700 dark:text-gh-fg">显示名</span>
               <input
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-sky-500"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-sky-500 dark:border-gh-border dark:bg-gh-canvas dark:text-gh-fg"
                 value={form.displayName}
                 onChange={(event) =>
                   updateField("displayName", event.target.value)
@@ -200,9 +204,9 @@ function AccountSetupForm({
             </label>
 
             <label className="space-y-2 text-sm">
-              <span className="font-medium text-slate-700">邮箱类型</span>
+              <span className="font-medium text-slate-700 dark:text-gh-fg">邮箱类型</span>
               <select
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-sky-500"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-sky-500 dark:border-gh-border dark:bg-gh-canvas dark:text-gh-fg"
                 value={form.provider}
                 onChange={(event) =>
                   setForm(applyProviderPreset(form, event.target.value))
@@ -215,9 +219,9 @@ function AccountSetupForm({
             </label>
 
             <label className="space-y-2 text-sm">
-              <span className="font-medium text-slate-700">IMAP 服务器</span>
+              <span className="font-medium text-slate-700 dark:text-gh-fg">IMAP 服务器</span>
               <input
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-sky-500"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-sky-500 dark:border-gh-border dark:bg-gh-canvas dark:text-gh-fg"
                 value={form.imapHost}
                 onChange={(event) => updateField("imapHost", event.target.value)}
                 placeholder="imap.example.com"
@@ -226,9 +230,9 @@ function AccountSetupForm({
             </label>
 
             <label className="space-y-2 text-sm">
-              <span className="font-medium text-slate-700">IMAP 端口</span>
+              <span className="font-medium text-slate-700 dark:text-gh-fg">IMAP 端口</span>
               <input
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-sky-500"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-sky-500 dark:border-gh-border dark:bg-gh-canvas dark:text-gh-fg"
                 value={form.imapPort}
                 onChange={(event) => updateField("imapPort", event.target.value)}
                 placeholder="993"
@@ -237,10 +241,10 @@ function AccountSetupForm({
             </label>
 
             <label className="space-y-2 text-sm">
-              <span className="font-medium text-slate-700">IMAP 授权码</span>
+              <span className="font-medium text-slate-700 dark:text-gh-fg">IMAP 授权码</span>
               <input
                 type="password"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-sky-500"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-sky-500 dark:border-gh-border dark:bg-gh-canvas dark:text-gh-fg"
                 value={form.secret}
                 onChange={(event) => updateField("secret", event.target.value)}
                 placeholder="IMAP 授权码"
@@ -249,7 +253,7 @@ function AccountSetupForm({
             </label>
           </div>
 
-          <label className="flex items-center gap-3 text-sm text-slate-700">
+          <label className="flex items-center gap-3 text-sm text-slate-700 dark:text-gh-fg">
             <input
               type="checkbox"
               checked={form.imapSsl}
@@ -259,7 +263,7 @@ function AccountSetupForm({
           </label>
 
           {message ? (
-            <div className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">
+            <div className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700 dark:bg-gh-overlay dark:text-gh-fg">
               {message}
             </div>
           ) : null}
@@ -267,14 +271,14 @@ function AccountSetupForm({
           <div className="flex flex-wrap gap-3">
             <button
               type="submit"
-              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50 dark:bg-gh-accent-emphasis dark:text-white dark:hover:bg-gh-accent"
               disabled={saveMutation.isPending}
             >
               {saveMutation.isPending ? "保存中..." : "保存账号"}
             </button>
             <button
               type="button"
-              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:border-gh-border dark:text-gh-fg dark:hover:bg-gh-overlay"
               onClick={handleTestConnection}
               disabled={testMutation.isPending}
             >

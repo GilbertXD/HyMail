@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
-const IMAP_PORT = "11430";
+// Must track the mock IMAP server started by playwright.config.ts.
+const IMAP_PORT = process.env.HYMAIL_E2E_IMAP_PORT ?? "11430";
 
 test("v0.0.1 account setup and sync demo path", async ({ page }) => {
   await page.goto("/setup");
@@ -20,14 +21,65 @@ test("v0.0.1 account setup and sync demo path", async ({ page }) => {
 
   await page.getByRole("link", { name: "邮件" }).click();
   await page.getByRole("button", { name: /INBOX/ }).click();
-  await page.getByRole("button", { name: "同步" }).click();
+  await page.getByRole("button", { name: "同步", exact: true }).click();
 
   await expect(page.getByTestId("mail-sync-last-uid")).toHaveText(
-    "last UID: 2",
+    "last UID: 3",
     { timeout: 15_000 },
   );
   await expect(page.getByTestId("mail-sync-state")).toHaveText("IDLE");
 
   await expect(page.getByText("E2E One")).toBeVisible();
   await expect(page.getByText("E2E Two")).toBeVisible();
+
+  // An HTML message must render in a sandboxed frame: its own styles apply
+  // inside, but must never reach the app document.
+  await page.getByRole("button", { name: /E2E HTML/ }).click();
+  const frame = page.frameLocator('[data-testid="message-body-frame"]');
+  await expect(frame.locator("body")).toHaveCSS(
+    "font-family",
+    /Comic Sans MS/,
+  );
+  const appFontFamily = await page.evaluate(
+    () => getComputedStyle(document.body).fontFamily,
+  );
+  expect(appFontFamily).not.toMatch(/Comic Sans/i);
+
+  await page.getByTestId("mail-sync-detail-toggle").click();
+  await expect(page.getByText("同步事件时间线")).toBeVisible();
+  await expect(page.getByText("sync.completed")).toBeVisible();
+});
+
+test("theme toggle switches the shell and survives a reload", async ({
+  page,
+}) => {
+  // The shell renders even without an account, so /setup is enough to reach
+  // the sidebar toggle.
+  await page.goto("/setup");
+
+  const html = page.locator("html");
+  const toggle = page.getByTestId("theme-toggle");
+  const shell = page.locator("main");
+  const darkCanvas = "rgb(13, 17, 23)"; // GitHub canvas #0d1117
+
+  await expect(html).not.toHaveClass(/dark/);
+  await expect(toggle).toHaveAccessibleName("切换到夜间模式");
+  // Tailwind v4 ships its palette in oklch, so the light value is not rgb().
+  expect(
+    await shell.evaluate((el) => getComputedStyle(el).backgroundColor),
+  ).not.toBe(darkCanvas);
+
+  await toggle.click();
+
+  await expect(html).toHaveClass(/dark/);
+  await expect(toggle).toHaveAccessibleName("切换到日间模式");
+  await expect(shell).toHaveCSS("background-color", darkCanvas);
+
+  // The inline script in index.html must restore it before first paint.
+  await page.reload();
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await expect(page.locator("main")).toHaveCSS(
+    "background-color",
+    darkCanvas,
+  );
 });
