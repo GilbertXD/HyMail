@@ -19,6 +19,7 @@ from hymail_api.imap.errors import (
     ImapAuthenticationError,
     ImapConnectionError,
     ImapError,
+    ImapFolderNotFoundError,
     ImapProtocolError,
     ImapRateLimitError,
 )
@@ -77,18 +78,30 @@ class SyncEngine:
         self,
         account_id: UUID,
         folder_name: str,
+        *,
+        client: ImapClient | None = None,
     ) -> SyncResult:
+        """Sync one folder.
+
+        Pass ``client`` to reuse an already-authenticated connection, which is
+        what makes a whole-mailbox batch cost one LOGIN instead of one per
+        folder. A shared connection cannot be re-established from in here, so
+        it gets a single attempt: the queue re-queues the job with backoff
+        instead, which also survives a restart.
+        """
         trace_id = str(uuid4())
         started_at = time.monotonic()
         last_error: ImapError | None = None
+        max_attempts = self._max_attempts if client is None else 1
 
-        for attempt in range(1, self._max_attempts + 1):
+        for attempt in range(1, max_attempts + 1):
             try:
                 result = await self._sync_once(
                     account_id,
                     folder_name,
                     trace_id,
                     attempt,
+                    client,
                 )
                 result.duration_ms = int((time.monotonic() - started_at) * 1000)
                 return result
@@ -118,7 +131,7 @@ class SyncEngine:
                     attempts=attempt,
                     error=exc,
                 )
-                if attempt >= self._max_attempts:
+                if attempt >= max_attempts:
                     raise
                 delay = calculate_backoff_delay(
                     attempt,
@@ -155,16 +168,21 @@ class SyncEngine:
         folder_name: str,
         trace_id: str,
         attempt: int,
+        client: ImapClient | None = None,
     ) -> SyncResult:
-        client = self._imap_client_factory()
+        owned = client is None
+        active = client if client is not None else self._imap_client_factory()
         try:
-            await client.connect()
-            folders = await client.list_folders()
+            if owned:
+                await active.connect()
+            folders = await active.list_folders()
             remote_folder = _find_remote_folder(folders, folder_name)
             if remote_folder is None:
-                raise ImapProtocolError(f"IMAP folder not found: {folder_name}")
+                raise ImapFolderNotFoundError(
+                    f"IMAP folder not found: {folder_name}"
+                )
 
-            selection = await client.select_folder(folder_name)
+            selection = await active.select_folder(folder_name)
             if selection.uidvalidity is None:
                 raise ImapProtocolError("server did not return UIDVALIDITY")
 
@@ -179,7 +197,7 @@ class SyncEngine:
             total_fetched = 0
             buffer: list[FetchedMessage] = []
             if prepared.end_uid is None or prepared.start_uid <= prepared.end_uid:
-                async for message in client.fetch_messages(
+                async for message in active.fetch_messages(
                     folder_name,
                     prepared.start_uid,
                     prepared.end_uid,
@@ -216,7 +234,8 @@ class SyncEngine:
                 total_fetched,
             )
         finally:
-            await client.close()
+            if owned:
+                await active.close()
 
     async def _prepare_sync(
         self,

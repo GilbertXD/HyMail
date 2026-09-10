@@ -20,3 +20,11 @@ class ImapRateLimitError(ImapError):
 
 class ImapFetchInterruptedError(ImapConnectionError):
     """A FETCH operation was interrupted before completion."""
+
+
+class ImapFolderNotFoundError(ImapError):
+    """The requested mailbox does not exist on the server.
+
+    Permanent: retrying will not help, so the queue fails the job outright
+    instead of burning its attempts.
+    """
