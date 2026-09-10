@@ -2,9 +2,11 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
   pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   api:
@@ -47,3 +49,46 @@ jobs:
         run: pnpm --filter @hymail/desktop test
       - name: Build
         run: pnpm --filter @hymail/desktop build
+
+  e2e:
+    name: E2E
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install Python
+        working-directory: apps/api
+        run: uv python install 3.12
+      - name: Sync API dependencies
+        working-directory: apps/api
+        run: uv sync
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Run Playwright
+        run: pnpm --filter @hymail/desktop test:e2e
+
+  tauri-check:
+    name: Tauri Check
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Cargo check
+        working-directory: apps/desktop/src-tauri
+        run: cargo check
