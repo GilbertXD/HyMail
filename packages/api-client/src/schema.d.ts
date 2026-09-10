@@ -471,6 +471,16 @@ export interface components {
              * @default false
              */
             remote_missing: boolean;
+            /**
+             * Is Read
+             * @default false
+             */
+            is_read: boolean;
+            /**
+             * Is Starred
+             * @default false
+             */
+            is_starred: boolean;
             /** To */
             to: string[];
             /** Cc */
@@ -517,6 +527,16 @@ export interface components {
              * @default false
              */
             remote_missing: boolean;
+            /**
+             * Is Read
+             * @default false
+             */
+            is_read: boolean;
+            /**
+             * Is Starred
+             * @default false
+             */
+            is_starred: boolean;
         };
         /** SyncBatchRead */
         SyncBatchRead: {

@@ -116,6 +116,24 @@ async def main() -> None:
             mailbox=str(payload.get("mailbox", "INBOX")),
         )
         return {"removed": removed}
+
+    @app.post("/__e2e/messages/flags")
+    async def _set_flags(payload: dict[str, object]) -> dict[str, bool]:
+        """Change flags server-side, as another mail client would."""
+        mailbox = str(payload.get("mailbox", "INBOX"))
+        uid = int(payload["uid"])  # type: ignore[arg-type]
+        flags = [str(flag) for flag in payload.get("flags", [])]  # type: ignore[union-attr]
+        add = bool(payload.get("add", True))
+        for message in mock_server.folders.get(mailbox, []):
+            if message.uid != uid:
+                continue
+            for flag in flags:
+                if add and flag not in message.flags:
+                    message.flags.append(flag)
+                elif not add and flag in message.flags:
+                    message.flags.remove(flag)
+            return {"updated": True}
+        return {"updated": False}
     config = uvicorn.Config(
         app,
         host="127.0.0.1",

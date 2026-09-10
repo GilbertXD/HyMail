@@ -36,6 +36,7 @@ export function MailPage() {
   const [messageId, setMessageId] = useState<string | null>(null);
   const [showSyncDetail, setShowSyncDetail] = useState(false);
   const [batchId, setBatchId] = useState<string | null>(null);
+  const [unreadOnly, setUnreadOnly] = useState(false);
 
   const accountQuery = useQuery({
     queryKey: ["account"],
@@ -231,6 +232,11 @@ export function MailPage() {
       ? allMessagesQuery.data ?? []
       : folderMessagesQuery.data ?? [];
 
+  const visibleMessages = unreadOnly
+    ? messages.filter((message) => !message.is_read)
+    : messages;
+  const unreadCount = messages.filter((message) => !message.is_read).length;
+
   const messagesLoading =
     view === "all"
       ? allMessagesQuery.isLoading
@@ -318,7 +324,9 @@ export function MailPage() {
             {view === "all" ? "全部邮件" : selectedFolder?.name ?? "邮件"}
           </h2>
           <span className="text-xs text-slate-400 dark:text-gh-fg-subtle">
-            {messages.length} 封
+            {unreadCount > 0
+              ? `${unreadCount} 未读 / ${messages.length} 封`
+              : `${messages.length} 封`}
           </span>
         </div>
 
@@ -356,6 +364,19 @@ export function MailPage() {
             data-testid="mail-sync-all"
           >
             {batchRunning ? "同步中..." : "同步全部"}
+          </button>
+          <button
+            type="button"
+            className={[
+              "rounded border px-2 py-1 font-medium transition",
+              unreadOnly
+                ? "border-sky-300 bg-sky-50 text-sky-700 dark:border-gh-accent dark:bg-gh-accent-subtle dark:text-gh-accent"
+                : "border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-gh-border dark:text-gh-fg dark:hover:bg-gh-overlay",
+            ].join(" ")}
+            onClick={() => setUnreadOnly((current) => !current)}
+            data-testid="mail-unread-filter"
+          >
+            只看未读
           </button>
           <button
             type="button"
@@ -447,7 +468,7 @@ export function MailPage() {
               />
             </div>
           ) : null}
-          {messages.map((message) => (
+          {visibleMessages.map((message) => (
             <button
               key={message.id}
               type="button"
@@ -463,11 +484,31 @@ export function MailPage() {
               ].join(" ")}
             >
               <div className="flex items-center justify-between gap-3">
-                <span className="truncate text-sm font-medium text-slate-900 dark:text-gh-fg">
+                <span
+                  className={[
+                    "truncate text-sm",
+                    message.is_read
+                      ? "text-slate-700 dark:text-gh-fg-muted"
+                      : "font-semibold text-slate-900 dark:text-gh-fg",
+                  ].join(" ")}
+                  data-testid={
+                    message.is_read ? "message-read" : "message-unread"
+                  }
+                >
                   {message.subject || "(无主题)"}
                 </span>
-                <span className="shrink-0 text-xs text-slate-400 dark:text-gh-fg-subtle">
-                  {formatDateTime(message.date)}
+                <span className="flex shrink-0 items-center gap-1">
+                  {message.is_starred ? (
+                    <span
+                      className="text-amber-500"
+                      data-testid="message-starred"
+                    >
+                      ★
+                    </span>
+                  ) : null}
+                  <span className="text-xs text-slate-400 dark:text-gh-fg-subtle">
+                    {formatDateTime(message.date)}
+                  </span>
                 </span>
               </div>
               <div className="mt-1 flex items-center gap-2 text-xs text-slate-500 dark:text-gh-fg-muted">
@@ -490,11 +531,13 @@ export function MailPage() {
               </div>
             </button>
           ))}
-          {!messages.length && !messagesLoading ? (
+          {!visibleMessages.length && !messagesLoading ? (
             <div className="px-4 py-8 text-sm text-slate-400 dark:text-gh-fg-subtle">
-              {view === "all"
-                ? "还没有同步到任何邮件。"
-                : "这个文件夹还没有同步到邮件。"}
+              {unreadOnly
+                ? "没有未读邮件。"
+                : view === "all"
+                  ? "还没有同步到任何邮件。"
+                  : "这个文件夹还没有同步到邮件。"}
             </div>
           ) : null}
         </div>

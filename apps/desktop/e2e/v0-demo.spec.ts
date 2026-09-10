@@ -139,11 +139,17 @@ test("reconcile marks mail deleted on the server", async ({
   await page.getByRole("link", { name: "邮件" }).click();
   await page.getByRole("button", { name: "刷新文件夹" }).click();
 
-  // Delete UID 1 on the server, exactly as another device would.
+  // Delete UID 1 on the server, exactly as another device would, and mark
+  // UID 2 read so the flag direction is covered by the same reconcile.
   const removed = await request.post(`${API_BASE}/__e2e/messages/remove`, {
     data: { uid: 1, mailbox: "INBOX" },
   });
   expect(removed.ok()).toBeTruthy();
+
+  const flagged = await request.post(`${API_BASE}/__e2e/messages/flags`, {
+    data: { uid: 2, mailbox: "INBOX", flags: ["\\Seen"], add: true },
+  });
+  expect(flagged.ok()).toBeTruthy();
 
   await page.getByTestId("mail-reconcile").click();
 
@@ -151,4 +157,9 @@ test("reconcile marks mail deleted on the server", async ({
     page.getByTestId("message-remote-missing").first(),
   ).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText("E2E One")).toBeVisible();
+
+  // The read flag set on the server reached this copy.
+  await expect(page.getByTestId("message-read").first()).toBeVisible({
+    timeout: 20_000,
+  });
 });

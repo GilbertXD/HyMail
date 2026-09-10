@@ -1198,6 +1198,16 @@
             "title": "Remote Missing",
             "default": false
           },
+          "is_read": {
+            "type": "boolean",
+            "title": "Is Read",
+            "default": false
+          },
+          "is_starred": {
+            "type": "boolean",
+            "title": "Is Starred",
+            "default": false
+          },
           "to": {
             "items": {
               "type": "string"
@@ -1369,6 +1379,16 @@
           "remote_missing": {
             "type": "boolean",
             "title": "Remote Missing",
+            "default": false
+          },
+          "is_read": {
+            "type": "boolean",
+            "title": "Is Read",
+            "default": false
+          },
+          "is_starred": {
+            "type": "boolean",
+            "title": "Is Starred",
             "default": false
           }
         },
