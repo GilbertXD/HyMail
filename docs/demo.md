@@ -101,3 +101,27 @@ modified UTF-7 乱码文件夹名就地修复。
 这一条也有自动化测试覆盖：
 
     uv run pytest tests/sync/test_engine_crash_recovery.py -v
+
+## 7. 一键同步整个邮箱
+
+进入 /mail，点击「同步全部」：
+
+- 所有远端仍存在的文件夹排成一个批次，按账号串行执行
+- 进度条显示「同步全部 3/13」和当前正在同步的文件夹
+- 展开「同步详情」可以看到同步队列里每个任务的状态、尝试次数和错误原因
+- 批次结束后进度条显示「已完成」
+
+整个批次只 LOGIN 一次，而不是每个文件夹一次。
+
+## 8. 队列崩溃恢复
+
+「同步全部」跑到一半时直接结束 uvicorn 进程，再重新启动：
+
+    uv run python scripts/run_demo_server.py --messages 25
+
+后端启动时会把所有处于 running 且租约已过期的任务重新排回队列，所以重新打开
+页面点「同步详情」能看到任务继续跑完，不需要手工重来。
+
+自动化测试覆盖：
+
+    uv run pytest tests/sync/test_scheduler.py -v
