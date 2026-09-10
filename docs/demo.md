@@ -171,4 +171,25 @@ modified UTF-7 乱码文件夹名就地修复。
 
     uv run pytest tests/sync/test_outbox.py tests/api/test_outbox_api.py -v
 
+## 11. 移动对账
+
+用控制接口把一封邮件从 INBOX 移到 Sent：
+
+    $body = '{"uid": 3, "from_mailbox": "INBOX", "to_mailbox": "Sent"}'
+    Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/__e2e/messages/move -Body $body -ContentType application/json
+
+回到 /mail 点「对账」，然后：
+
+- 在 INBOX 里那封邮件会显示「可能已移动到 Sent」，而不是笼统的「远端已删除」
+- 切到 Sent 能看到它确实在那里
+- 顶部筛选选「只看远端异常」可以只看这类行
+
+说明是「可能」而不是「就是」：检测靠 Message-ID 推断，因为服务器没告诉我们
+COPYUID（那是 UIDPLUS 的能力）。命中多个文件夹时不会给结论。
+
+自动化测试覆盖：
+
+    uv run pytest tests/sync/test_engine_moves.py -v
+
+
 
