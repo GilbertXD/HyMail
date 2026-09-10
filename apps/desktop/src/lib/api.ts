@@ -1,5 +1,16 @@
-import { apiClient } from "@hymail/api-client";
+import { createApiClient } from "@hymail/api-client";
 import type { components } from "@hymail/api-client";
+
+let apiClient = createApiClient({
+  baseUrl: "http://127.0.0.1:8000",
+});
+
+export function configureApiClient(options: {
+  baseUrl: string;
+  token?: string;
+}): void {
+  apiClient = createApiClient(options);
+}
 
 export type AccountCreate = components["schemas"]["AccountCreate"];
 export type AccountRead = components["schemas"]["AccountRead"];
