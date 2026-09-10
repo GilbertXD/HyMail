@@ -55,6 +55,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/folders/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh Folders */
+        post: operations["refresh_folders_api_v1_folders_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/folders": {
         parameters: {
             query?: never;
@@ -81,6 +98,23 @@ export interface paths {
         };
         /** List Messages */
         get: operations["list_messages_api_v1_folders__folder_id__messages_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List All Messages */
+        get: operations["list_all_messages_api_v1_messages_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -348,6 +382,10 @@ export interface components {
             size: number | null;
             /** Flags */
             flags: string[];
+            /** Folder Name */
+            folder_name?: string | null;
+            /** Account Email */
+            account_email?: string | null;
             /** To */
             to: string[];
             /** Cc */
@@ -385,6 +423,10 @@ export interface components {
             size: number | null;
             /** Flags */
             flags: string[];
+            /** Folder Name */
+            folder_name?: string | null;
+            /** Account Email */
+            account_email?: string | null;
         };
         /** SyncCancelRequest */
         SyncCancelRequest: {
@@ -573,6 +615,26 @@ export interface operations {
             };
         };
     };
+    refresh_folders_api_v1_folders_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderRead"][];
+                };
+            };
+        };
+    };
     list_folders_api_v1_folders_get: {
         parameters: {
             query?: never;
@@ -603,6 +665,38 @@ export interface operations {
             path: {
                 folder_id: string;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_all_messages_api_v1_messages_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;

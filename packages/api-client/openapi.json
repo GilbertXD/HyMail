@@ -108,6 +108,31 @@
         }
       }
     },
+    "/api/v1/folders/refresh": {
+      "post": {
+        "tags": [
+          "folders"
+        ],
+        "summary": "Refresh Folders",
+        "operationId": "refresh_folders_api_v1_folders_refresh_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FolderRead"
+                  },
+                  "type": "array",
+                  "title": "Response Refresh Folders Api V1 Folders Refresh Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/folders": {
       "get": {
         "tags": [
@@ -186,6 +211,66 @@
                     "$ref": "#/components/schemas/MessageSummary"
                   },
                   "title": "Response List Messages Api V1 Folders  Folder Id  Messages Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/messages": {
+      "get": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "List All Messages",
+        "operationId": "list_all_messages_api_v1_messages_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MessageSummary"
+                  },
+                  "title": "Response List All Messages Api V1 Messages Get"
                 }
               }
             }
@@ -910,6 +995,28 @@
             "type": "array",
             "title": "Flags"
           },
+          "folder_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folder Name"
+          },
+          "account_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Email"
+          },
           "to": {
             "items": {
               "type": "string"
@@ -1055,6 +1162,28 @@
             },
             "type": "array",
             "title": "Flags"
+          },
+          "folder_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folder Name"
+          },
+          "account_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Email"
           }
         },
         "type": "object",

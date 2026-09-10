@@ -130,3 +130,18 @@ export async function listSyncEvents(
     }),
   );
 }
+
+export async function refreshFolders(): Promise<FolderRead[]> {
+  return unwrap(await apiClient.POST("/api/v1/folders/refresh"));
+}
+
+export async function listAllMessages(
+  limit = 200,
+  offset = 0,
+): Promise<MessageSummary[]> {
+  return unwrap(
+    await apiClient.GET("/api/v1/messages", {
+      params: { query: { limit, offset } },
+    }),
+  );
+}

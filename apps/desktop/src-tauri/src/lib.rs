@@ -38,11 +38,15 @@ fn spawn_sidecar(port: u16, token: &str) -> Child {
         .join("..")
         .join("..")
         .join("api");
+    let python = api_dir
+        .join(".venv")
+        .join("Scripts")
+        .join("python.exe");
     let port_text = port.to_string();
 
-    Command::new("uv")
+    Command::new(python)
         .args([
-            "run",
+            "-m",
             "uvicorn",
             "hymail_api.main:app",
             "--host",

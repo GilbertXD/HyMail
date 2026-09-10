@@ -14,6 +14,8 @@ class MessageSummary(BaseModel):
     date: datetime | None
     size: int | None
     flags: list[str]
+    folder_name: str | None = None
+    account_email: str | None = None
 
 
 class MessageDetail(MessageSummary):

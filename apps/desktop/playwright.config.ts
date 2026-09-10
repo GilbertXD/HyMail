@@ -22,7 +22,7 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: "uv run python scripts/run_e2e_server.py",
+      command: ".venv\\Scripts\\python.exe scripts\\run_e2e_server.py",
       cwd: "../api",
       url: `http://127.0.0.1:${API_PORT}/health`,
       reuseExistingServer: false,
