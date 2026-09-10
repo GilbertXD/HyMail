@@ -28,21 +28,26 @@
 
 - 邮箱：user@example.com
 - 提供商：自定义 IMAP
-- 用户名：user@example.com
 - IMAP 服务器：127.0.0.1
 - 端口：11430
 - 不勾选 SSL
 - 授权码：secret
 
+用户名不需要单独填写，保存时会自动使用邮箱地址。
+
 点击测试连接，再保存账号。
 
 ## 2. 初始同步
 
-进入 /sync：
+进入 /mail，在左侧选择 INBOX：
 
-- 点击手动同步
-- 状态应变为 initial_sync，然后 IDLE
-- 进入 /mail，可以看到 20 封演示邮件
+- 点击「同步」
+- 状态应从 initial_sync 变为 IDLE
+- 邮件列表出现 20 封演示邮件
+- 点击「同步详情」可以展开同步状态面板和同步事件时间线
+
+如果是从旧版本升级上来的数据库，先点一次「刷新文件夹」，让历史遗留的
+modified UTF-7 乱码文件夹名就地修复。
 
 ## 3. 增量同步
 
@@ -50,7 +55,7 @@
 
     uv run python scripts/run_demo_server.py --messages 25
 
-保持数据库不重置，再次手动同步：
+保持数据库不重置，再次点击「同步」：
 
 - 只拉取 last_uid 之后的新邮件
 - 邮件列表变为 25 封
@@ -61,11 +66,12 @@
 
     uv run python scripts/run_demo_server.py --messages 25 --uidvalidity 2
 
-再次手动同步：
+再次点击「同步」：
 
 - 触发 RESYNC
 - 旧映射被清理
 - 重新初始同步
+- 状态面板显示「UIDVALIDITY 变化，重新同步」
 
 ## 5. 断网重试
 
@@ -75,8 +81,8 @@
 
 触发同步：
 
-- 进入 ERROR_BACKOFF
-- 状态面板显示错误和重试次数
+- 进入 ERROR_BACKOFF，状态显示「重试中」
+- 展开「同步详情」可以看到错误原因和下次重试倒计时
 
 再重新正常启动 demo server：
 
@@ -91,3 +97,7 @@
     uv run python scripts/run_demo_server.py --messages 25
 
 由于游标和数据在同一事务提交，会从最后一次成功提交的批次继续，不会漏信或重复。
+
+这一条也有自动化测试覆盖：
+
+    uv run pytest tests/sync/test_engine_crash_recovery.py -v
