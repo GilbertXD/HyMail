@@ -75,12 +75,20 @@ class ImapClient:
 
     async def capabilities(self) -> set[str]:
         client = self._require_client()
+        protocol = getattr(client, "protocol", None)
         try:
-            await client.capability()
+            if protocol is not None:
+                await protocol.capability()
         except Exception as exc:
             raise self._map_exception(exc, "capability") from exc
 
-        raw_capabilities = getattr(client, "capabilities", set())
+        raw_capabilities = (
+            getattr(protocol, "capabilities", None)
+            if protocol is not None
+            else None
+        )
+        if raw_capabilities is None:
+            raw_capabilities = getattr(client, "capabilities", set())
         result: set[str] = set()
         for capability in raw_capabilities:
             text = (

@@ -79,7 +79,7 @@ function toPayload(form: AccountFormState): AccountCreate {
     imap_port: form.imapPort ? Number(form.imapPort) : null,
     imap_ssl: form.imapSsl,
     username: form.username.trim() || null,
-    secret: form.secret,
+    secret: form.secret.trim(),
   };
 }
 
