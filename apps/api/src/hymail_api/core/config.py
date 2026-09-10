@@ -29,6 +29,7 @@ class Settings(BaseSettings):
 
     data_dir: Path = Field(default_factory=default_data_dir)
     database_url: str | None = None
+    api_token: str | None = None
 
     @property
     def sqlalchemy_database_url(self) -> str:
