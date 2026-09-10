@@ -2,6 +2,7 @@ from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import aliased
 
 from hymail_api.db.models.account import Account
 from hymail_api.db.models.folder import Folder
@@ -160,3 +161,26 @@ async def get_flag_states(
             )
         ).all()
         return [(uid, bool(read), bool(star)) for uid, read, star in rows]
+
+
+async def get_move_targets(
+    session_factory: async_sessionmaker[AsyncSession],
+    account_id: UUID,
+    folder_name: str,
+) -> list[tuple[int, str | None]]:
+    """(uid, destination folder name) for messages in one folder."""
+    target = aliased(Folder)
+    async with session_factory() as session:
+        rows = (
+            await session.execute(
+                select(Message.uid, target.name)
+                .join(Folder, Folder.id == Message.folder_id)
+                .outerjoin(target, target.id == Message.moved_to_folder_id)
+                .where(
+                    Message.account_id == account_id,
+                    Folder.name == folder_name,
+                )
+                .order_by(Message.uid)
+            )
+        ).all()
+        return [(uid, destination) for uid, destination in rows]

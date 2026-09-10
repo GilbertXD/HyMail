@@ -1,4 +1,4 @@
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -256,6 +256,103 @@ def _extract_headers(raw_message: bytes) -> str | None:
 _RECONCILE_CHUNK = 400
 
 
+async def attribute_moves_for_new_mail(
+    session: AsyncSession,
+    account_id: UUID,
+    folder_id: UUID,
+    message_ids: Sequence[str],
+) -> int:
+    """Point ghosts at the folder a message just turned up in.
+
+    Runs when mail arrives, so the explanation exists whichever folder the
+    batch happens to process first.
+    """
+    unique_ids = sorted({message_id for message_id in message_ids if message_id})
+    if not unique_ids:
+        return 0
+
+    result = await session.execute(
+        update(Message)
+        .where(
+            Message.account_id == account_id,
+            Message.folder_id != folder_id,
+            Message.remote_missing.is_(True),
+            Message.message_id.in_(unique_ids),
+        )
+        .values(moved_to_folder_id=folder_id)
+    )
+    return result.rowcount or 0
+
+
+async def attribute_ghost_moves(
+    session: AsyncSession,
+    account_id: UUID,
+    folder_id: UUID,
+    uids: set[int],
+) -> int:
+    """Look for mail flagged missing here in another folder.
+
+    Only a unique destination counts. A Message-ID can legitimately exist in
+    two folders at once — a message you CC yourself lives in both Sent and
+    INBOX — so an ambiguous match is left unexplained rather than guessed at.
+    """
+    if not uids:
+        return 0
+
+    rows = (
+        await session.execute(
+            select(
+                Message.id,
+                Message.message_id,
+                Message.moved_to_folder_id,
+            ).where(
+                Message.folder_id == folder_id,
+                Message.uid.in_(sorted(uids)),
+                Message.message_id.is_not(None),
+            )
+        )
+    ).all()
+    if not rows:
+        return 0
+
+    message_ids = [message_id for _, message_id, _ in rows]
+    candidates = (
+        await session.execute(
+            select(Message.message_id, Message.folder_id)
+            .where(
+                Message.account_id == account_id,
+                Message.folder_id != folder_id,
+                Message.message_id.in_(message_ids),
+                # Another folder's ghost is not evidence that the message is
+                # there; only a row the server still confirms counts.
+                Message.remote_missing.is_(False),
+            )
+            .distinct()
+        )
+    ).all()
+
+    destinations: dict[str, set[UUID]] = {}
+    for message_id, candidate_folder_id in candidates:
+        destinations.setdefault(message_id, set()).add(candidate_folder_id)
+
+    attributed = 0
+    for row_id, message_id, current in rows:
+        folders = destinations.get(message_id)
+        destination = next(iter(folders)) if folders and len(folders) == 1 else None
+        # Recomputed every pass, so a note that no longer holds is dropped
+        # rather than left pointing at a folder that no longer has the message.
+        if destination == current:
+            continue
+        await session.execute(
+            update(Message)
+            .where(Message.id == row_id)
+            .values(moved_to_folder_id=destination)
+        )
+        if destination is not None:
+            attributed += 1
+    return attributed
+
+
 async def list_message_uids(
     session: AsyncSession,
     folder_id: UUID,
@@ -311,7 +408,12 @@ async def apply_reconcile(
                 Message.uid.in_(chunk),
                 Message.remote_missing.is_(True),
             )
-            .values(remote_missing=False, remote_missing_at=None)
+            # The message is back, so any "it moved there" note is stale.
+            .values(
+                remote_missing=False,
+                remote_missing_at=None,
+                moved_to_folder_id=None,
+            )
         )
 
 

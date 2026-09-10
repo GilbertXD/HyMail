@@ -15,6 +15,8 @@ def _message(subject: str) -> bytes:
     message["Subject"] = subject
     message["From"] = "Alice <alice@example.com>"
     message["To"] = "Bob <bob@example.com>"
+    # Real mail carries one, and it is the only thing move detection can use.
+    message["Message-ID"] = f"<{subject}@example.com>"
     return message.as_bytes()
 
 
@@ -146,3 +148,48 @@ async def test_reconcile_flags_messages_deleted_on_the_server(
 
     events = (await client.get("/api/v1/sync/events")).json()
     assert any(event["event_type"] == "sync.reconcile" for event in events)
+
+
+async def test_reconcile_reports_where_a_message_went(
+    client: AsyncClient,
+    account_payload: dict[str, object],
+    mock_server,
+) -> None:
+    """A whole-account reconcile explains a move in a single pass.
+
+    The source folder is processed first and only learns the message is gone;
+    the destination then fetches it and fills in the explanation.
+    """
+    create_response = await client.post("/api/v1/accounts", json=account_payload)
+    assert create_response.status_code == 201
+
+    mock_server.add_message(_message("Moving"), mailbox="INBOX", uid=1)
+    mock_server.add_message(_message("Keeper"), mailbox="INBOX", uid=2)
+
+    refresh_response = await client.post("/api/v1/folders/refresh")
+    assert refresh_response.status_code == 200
+
+    first = await client.post("/api/v1/sync/trigger-all", json={})
+    await _wait_for_batch(client, first.json()["batch_id"])
+
+    mock_server.move_message(1, from_mailbox="INBOX", to_mailbox="Sent")
+
+    reconcile = await client.post("/api/v1/sync/reconcile", json={})
+    assert reconcile.status_code == 202
+    summary = await _wait_for_batch(client, reconcile.json()["batch_id"])
+    assert summary["state"] == "completed"
+
+    messages = (await client.get("/api/v1/messages")).json()
+    by_key = {(m["folder_name"], m["uid"]): m for m in messages}
+
+    ghost = by_key[("INBOX", 1)]
+    assert ghost["remote_missing"] is True
+    assert ghost["moved_to_folder_name"] == "Sent"
+
+    # The keeper is untouched, and the message is also live in its new home.
+    assert by_key[("INBOX", 2)]["remote_missing"] is False
+    assert by_key[("INBOX", 2)]["moved_to_folder_name"] is None
+    assert any(
+        message["folder_name"] == "Sent" and message["remote_missing"] is False
+        for message in messages
+    )

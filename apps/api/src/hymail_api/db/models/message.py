@@ -31,6 +31,7 @@ class Message(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_message_folder_id_date", "folder_id", "date"),
         Index("ix_message_folder_id_uid", "folder_id", "uid"),
         Index("ix_message_folder_id_is_read", "folder_id", "is_read"),
+        Index("ix_message_account_id_message_id", "account_id", "message_id"),
         Index(
             "ix_message_folder_id_remote_missing",
             "folder_id",
@@ -98,4 +99,11 @@ class Message(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Boolean,
         nullable=False,
         default=False,
+    )
+    # Where the message turned up after it vanished from this folder. Weak
+    # evidence by nature: a Message-ID can legitimately exist twice (a message
+    # you CC yourself lives in both Sent and INBOX), so the UI words this as a
+    # possibility rather than a fact.
+    moved_to_folder_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("folder.id", ondelete="SET NULL")
     )

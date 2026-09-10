@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from hymail_api.api.deps import OutboxDep, SessionDep
 from hymail_api.db.models.account import Account
@@ -27,7 +28,22 @@ async def _require_account(session: AsyncSession) -> Account:
     return account
 
 
-def _detail(message: Message, outbox_state: str | None = None) -> MessageDetail:
+async def _moved_to_name(
+    session: AsyncSession,
+    message: Message,
+) -> str | None:
+    if message.moved_to_folder_id is None:
+        return None
+    return await session.scalar(
+        select(Folder.name).where(Folder.id == message.moved_to_folder_id)
+    )
+
+
+async def _detail(
+    session: AsyncSession,
+    message: Message,
+    outbox_state: str | None = None,
+) -> MessageDetail:
     return MessageDetail(
         id=message.id,
         folder_id=message.folder_id,
@@ -44,6 +60,7 @@ def _detail(message: Message, outbox_state: str | None = None) -> MessageDetail:
         body_text=message.body_text,
         body_html=message.body_html,
         remote_missing=message.remote_missing,
+        moved_to_folder_name=await _moved_to_name(session, message),
         is_read=message.is_read,
         is_starred=message.is_starred,
         outbox_state=outbox_state,
@@ -60,11 +77,16 @@ async def list_all_messages(
     account = await _require_account(session)
     pending = await outbox.pending_message_ids(account.id)
 
+    destination = aliased(Folder)
     rows = (
         await session.execute(
-            select(Message, Folder.name, Account.email)
+            select(Message, Folder.name, Account.email, destination.name)
             .join(Folder, Folder.id == Message.folder_id)
             .join(Account, Account.id == Message.account_id)
+            .outerjoin(
+                destination,
+                destination.id == Message.moved_to_folder_id,
+            )
             .where(Message.account_id == account.id)
             .order_by(Message.date.desc(), Message.uid.desc())
             .limit(limit)
@@ -86,11 +108,12 @@ async def list_all_messages(
             folder_name=folder_name,
             account_email=email,
             remote_missing=message.remote_missing,
+            moved_to_folder_name=moved_to,
             is_read=message.is_read,
             is_starred=message.is_starred,
             outbox_state=pending.get(message.id),
         )
-        for message, folder_name, email in rows
+        for message, folder_name, email, moved_to in rows
     ]
 
 
@@ -103,7 +126,7 @@ async def get_message(
     account = await _require_account(session)
     message = await _require_message(session, account.id, message_id)
     pending = await outbox.pending_message_ids(account.id)
-    return _detail(message, pending.get(message.id))
+    return await _detail(session, message, pending.get(message.id))
 
 
 @router.patch("/{message_id}", response_model=MessageDetail)
@@ -148,7 +171,7 @@ async def update_message_flags(
     await outbox.notify()
 
     pending = await outbox.pending_message_ids(account.id)
-    return _detail(message, pending.get(message.id))
+    return await _detail(session, message, pending.get(message.id))
 
 
 async def _require_message(

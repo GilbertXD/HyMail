@@ -3,6 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select
+from sqlalchemy.orm import aliased
 
 from hymail_api.api.deps import SessionDep
 from hymail_api.db.models.folder import Folder
@@ -89,13 +90,20 @@ async def list_messages(
     if folder is None:
         raise HTTPException(status_code=404, detail="folder not found")
 
-    result = await session.scalars(
-        select(Message)
-        .where(Message.folder_id == folder.id)
-        .order_by(Message.uid.desc())
-        .limit(limit)
-        .offset(offset)
-    )
+    destination = aliased(Folder)
+    rows = (
+        await session.execute(
+            select(Message, destination.name)
+            .outerjoin(
+                destination,
+                destination.id == Message.moved_to_folder_id,
+            )
+            .where(Message.folder_id == folder.id)
+            .order_by(Message.uid.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+    ).all()
 
     return [
         MessageSummary(
@@ -111,8 +119,9 @@ async def list_messages(
             folder_name=folder.name,
             account_email=account.email,
             remote_missing=message.remote_missing,
+            moved_to_folder_name=moved_to,
             is_read=message.is_read,
             is_starred=message.is_starred,
         )
-        for message in result
+        for message, moved_to in rows
     ]

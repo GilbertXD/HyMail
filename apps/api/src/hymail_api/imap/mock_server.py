@@ -31,6 +31,10 @@ class MockImapScenario:
     disconnect_on_fetch: bool = False
     rate_limit_after_commands: int | None = None
     command_delay: float = 0.0
+    # A server that reports messages in SELECT but answers SEARCH with
+    # nothing. Inconsistent, and exactly what the reconcile safety valve is
+    # there to catch.
+    search_returns_empty: bool = False
 
 
 class MockImapServer:
@@ -39,7 +43,9 @@ class MockImapServer:
         self._server: asyncio.Server | None = None
         self._port: int | None = None
         self.folders: dict[str, list[MockMessage]] = {"INBOX": [], "Sent": []}
-        self._uidnext = 1
+        # UIDNEXT is per mailbox, so moving a message mints a UID from the
+        # destination's sequence rather than a global counter.
+        self._uidnext: dict[str, int] = {}
         self._connections: set[asyncio.StreamWriter] = set()
 
     @property
@@ -71,15 +77,24 @@ class MockImapServer:
         flags: list[str] | None = None,
         uid: int | None = None,
     ) -> int:
+        messages = self.folders.setdefault(mailbox, [])
         if uid is None:
-            uid = self._uidnext
-            self._uidnext += 1
+            uid = self._allocate_uid(mailbox)
         else:
-            self._uidnext = max(self._uidnext, uid + 1)
-        self.folders.setdefault(mailbox, []).append(
-            MockMessage(uid=uid, raw=raw, flags=flags or [])
-        )
+            self._uidnext[mailbox] = max(
+                self._uidnext.get(mailbox, 1),
+                uid + 1,
+            )
+        messages.append(MockMessage(uid=uid, raw=raw, flags=flags or []))
         return uid
+
+    def _allocate_uid(self, mailbox: str) -> int:
+        messages = self.folders.setdefault(mailbox, [])
+        current = self._uidnext.get(mailbox)
+        if current is None:
+            current = max((m.uid for m in messages), default=0) + 1
+        self._uidnext[mailbox] = current + 1
+        return current
 
     def set_uidvalidity(self, value: int) -> None:
         self.scenario.uidvalidity = value
@@ -95,6 +110,35 @@ class MockImapServer:
                 messages.pop(index)
                 return True
         return False
+
+    def move_message(
+        self,
+        uid: int,
+        *,
+        from_mailbox: str = "INBOX",
+        to_mailbox: str = "Sent",
+    ) -> int | None:
+        """Model a server-side move, which gives the message a new UID.
+
+        The Message-ID travels with it, which is the only thing a client can
+        use to connect the two without UIDPLUS.
+        """
+        source = self.folders.get(from_mailbox, [])
+        for index, message in enumerate(source):
+            if message.uid != uid:
+                continue
+            source.pop(index)
+            new_uid = self._allocate_uid(to_mailbox)
+            self.folders.setdefault(to_mailbox, []).append(
+                MockMessage(
+                    uid=new_uid,
+                    raw=message.raw,
+                    flags=list(message.flags),
+                    internal_date=message.internal_date,
+                )
+            )
+            return new_uid
+        return None
 
     async def _handle_client(
         self,
@@ -272,7 +316,10 @@ class MockImapServer:
             await self._write_no(writer, tag, "MAILBOX_NOT_FOUND")
             return
 
-        uidnext = max(self._uidnext, max((m.uid for m in messages), default=0) + 1)
+        uidnext = max(
+            self._uidnext.get(mailbox, 1),
+            max((m.uid for m in messages), default=0) + 1,
+        )
         await self._write_line(
             writer,
             b"* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)",
@@ -296,8 +343,10 @@ class MockImapServer:
         tag: str,
         mailbox: str,
     ) -> None:
-        uids = sorted(
-            message.uid for message in self.folders.get(mailbox, [])
+        uids = (
+            []
+            if self.scenario.search_returns_empty
+            else sorted(message.uid for message in self.folders.get(mailbox, []))
         )
         listing = " ".join(str(uid) for uid in uids)
         await self._write_line(writer, f"* SEARCH {listing}".rstrip().encode())

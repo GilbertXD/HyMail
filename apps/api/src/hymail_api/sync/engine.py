@@ -27,6 +27,8 @@ from hymail_api.sync.backoff import calculate_backoff_delay
 from hymail_api.sync.store import (
     apply_flag_reconcile,
     apply_reconcile,
+    attribute_ghost_moves,
+    attribute_moves_for_new_mail,
     count_messages,
     delete_messages_for_folder,
     get_or_create_cursor,
@@ -59,6 +61,7 @@ class _ReconcileOutcome:
     newly_missing: int
     restored: int
     flags_changed: int
+    moved: int
     local_total: int
     skipped: bool
 
@@ -204,6 +207,7 @@ class SyncEngine:
         try:
             if owned:
                 await active.connect()
+            selection = await active.select_folder(folder_name)
             remote_uids = set(await active.list_uids(folder_name))
             remote_flags = await active.fetch_flags(folder_name)
         finally:
@@ -220,7 +224,8 @@ class SyncEngine:
             sync_result.folder_id,
             remote_uids,
             remote_flags,
-            trace_id,
+            remote_exists=selection.exists,
+            trace_id=trace_id,
         )
         await self._set_cursor_state(
             account_id,
@@ -236,6 +241,7 @@ class SyncEngine:
             newly_missing=outcome.newly_missing,
             restored=outcome.restored,
             flags_changed=outcome.flags_changed,
+            moved=outcome.moved,
             remote_total=len(remote_uids),
             local_total=outcome.local_total,
             trace_id=trace_id,
@@ -250,6 +256,8 @@ class SyncEngine:
         folder_id: UUID,
         remote_uids: set[int],
         remote_flags: dict[int, frozenset[str]],
+        *,
+        remote_exists: int,
         trace_id: str,
     ) -> _ReconcileOutcome:
         now = datetime.now(UTC)
@@ -260,16 +268,17 @@ class SyncEngine:
             missing = local_uids - remote_uids
             restored = (local_uids & remote_uids) & already_flagged
 
-            # An empty remote set for a folder that is full locally is far
-            # more likely to be a bad answer than a user emptying the mailbox,
-            # and flagging every row would look like data loss.
-            skipped = bool(local_uids) and not remote_uids
+            # SELECT said the mailbox holds messages but SEARCH listed none:
+            # an inconsistent answer, and flagging every row on the strength
+            # of it would hide the whole folder. A mailbox that genuinely
+            # reports zero is a different thing and is reconciled normally.
+            skipped = remote_exists > 0 and not remote_uids
             if skipped:
                 logger.warning(
-                    "reconcile skipped folder_id=%s: server returned no UIDs "
-                    "for %s local messages",
+                    "reconcile skipped folder_id=%s: SELECT reported %s "
+                    "messages but SEARCH returned no UIDs",
                     folder_id,
-                    len(local_uids),
+                    remote_exists,
                 )
                 missing, restored = set(), set()
 
@@ -278,6 +287,15 @@ class SyncEngine:
                 folder_id,
                 missing=missing,
                 restored=restored,
+            )
+
+            # `missing` is the full set still absent from the server, so this
+            # also fills in explanations for anything flagged earlier.
+            moved = await attribute_ghost_moves(
+                session,
+                account_id,
+                folder_id,
+                missing,
             )
 
             # Flag alignment runs after the deletion diff so a message that
@@ -311,6 +329,7 @@ class SyncEngine:
                 message=(
                     f"remote={len(remote_uids)} local={len(local_uids)} "
                     f"missing={len(missing)} restored={len(restored)} "
+                    f"moved={moved} "
                     f"flags={flags_changed} queued_flags={len(queued)}"
                     + (" skipped=empty-remote" if skipped else "")
                 ),
@@ -321,6 +340,7 @@ class SyncEngine:
             newly_missing=len(missing - already_flagged),
             restored=len(restored),
             flags_changed=flags_changed,
+            moved=moved,
             local_total=len(local_uids),
             skipped=skipped,
         )
@@ -516,6 +536,20 @@ class SyncEngine:
                 folder_id,
                 list(messages),
             )
+
+            # Mail that just appeared here may explain a ghost in another
+            # folder, whichever order the batch happened to process them in.
+            await attribute_moves_for_new_mail(
+                session,
+                account_id,
+                folder_id,
+                [
+                    message.parsed.message_id
+                    for message in messages
+                    if message.parsed.message_id
+                ],
+            )
+
             cursor = await session.scalar(
                 select(SyncCursor).where(
                     SyncCursor.account_id == account_id,

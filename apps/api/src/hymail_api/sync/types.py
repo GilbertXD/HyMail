@@ -30,6 +30,7 @@ class ReconcileResult:
     newly_missing: int
     restored: int
     flags_changed: int
+    moved: int
     remote_total: int
     local_total: int
     trace_id: str

@@ -18,6 +18,10 @@ class MessageSummary(BaseModel):
     account_email: str | None = None
     # Set by reconciliation when the UID is gone from the server.
     remote_missing: bool = False
+    # Where it turned up, when exactly one other folder holds the same
+    # Message-ID. Worded as a possibility in the UI: a message you CC yourself
+    # legitimately exists twice.
+    moved_to_folder_name: str | None = None
     # Mirrors the \Seen and \Flagged IMAP flags.
     is_read: bool = False
     is_starred: bool = False

@@ -134,17 +134,52 @@ async def test_reconcile_also_pulls_new_mail(
     ]
 
 
-async def test_reconcile_refuses_to_flag_everything_on_an_empty_remote(
+async def test_reconcile_skips_an_inconsistent_search_answer(
     session_factory: async_sessionmaker[AsyncSession],
     account_id: UUID,
     mock_server: MockImapServer,
     imap_client_factory: Callable[[], ImapClient],
     message_factory: Callable[[str, str], bytes],
 ) -> None:
-    """A server answering "no UIDs" for a full folder must not wipe the view.
+    """SELECT and SEARCH disagreeing must not wipe the mailbox view.
 
-    Flagging every row would hide the whole mailbox, which looks exactly like
-    data loss, so an empty remote set is treated as suspicious instead.
+    A server that reports three messages and then lists no UIDs is broken, and
+    believing it would mark everything as deleted, which looks exactly like
+    data loss.
+    """
+    for uid in range(1, 4):
+        mock_server.add_message(message_factory(f"Msg {uid}"), uid=uid)
+
+    engine = build_engine(session_factory, imap_client_factory)
+    await engine.sync_folder(account_id, "INBOX")
+
+    mock_server.scenario.search_returns_empty = True
+
+    result = await engine.reconcile_folder(account_id, "INBOX")
+
+    assert result.skipped_mass_flagging is True
+    assert result.newly_missing == 0
+    assert all(
+        not missing
+        for _, missing in await get_missing_flags(
+            session_factory,
+            account_id,
+            "INBOX",
+        )
+    )
+
+
+async def test_reconcile_flags_a_genuinely_emptied_folder(
+    session_factory: async_sessionmaker[AsyncSession],
+    account_id: UUID,
+    mock_server: MockImapServer,
+    imap_client_factory: Callable[[], ImapClient],
+    message_factory: Callable[[str, str], bytes],
+) -> None:
+    """An empty mailbox is a real answer, not a suspicious one.
+
+    This is what distinguishes the safety valve from simply refusing to
+    believe deletions: EXISTS agrees with SEARCH, so the folder reconciles.
     """
     for uid in range(1, 4):
         mock_server.add_message(message_factory(f"Msg {uid}"), uid=uid)
@@ -156,10 +191,10 @@ async def test_reconcile_refuses_to_flag_everything_on_an_empty_remote(
 
     result = await engine.reconcile_folder(account_id, "INBOX")
 
-    assert result.skipped_mass_flagging is True
-    assert result.newly_missing == 0
+    assert result.skipped_mass_flagging is False
+    assert result.newly_missing == 3
     assert all(
-        not missing
+        missing
         for _, missing in await get_missing_flags(
             session_factory,
             account_id,

@@ -11,6 +11,7 @@ def message_bytes(subject: str, body: str = "body") -> bytes:
     message["Subject"] = subject
     message["From"] = "Alice <alice@example.com>"
     message["To"] = "Bob <bob@example.com>"
+    message["Message-ID"] = f"<{subject}@example.com>"
     return message.as_bytes()
 
 
