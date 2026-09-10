@@ -5,6 +5,7 @@ description = "HyMail local IMAP sync service"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+  "aioimaplib>=2.0,<3",
   "aiosqlite>=0.20,<1",
   "alembic>=1.14,<2",
   "fastapi>=0.115,<1",
