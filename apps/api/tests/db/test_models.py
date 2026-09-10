@@ -1,6 +1,6 @@
+import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
-import uuid
 
 import pytest
 import pytest_asyncio
