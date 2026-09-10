@@ -1,0 +1,13 @@
+{
+  "name": "hymail",
+  "version": "0.0.1",
+  "private": true,
+  "packageManager": "pnpm@11.25.0",
+  "scripts": {
+    "dev": "pnpm --filter @hymail/desktop dev",
+    "build": "pnpm --filter @hymail/desktop build",
+    "lint": "pnpm -r --if-present run lint",
+    "test": "pnpm -r --if-present run test",
+    "typecheck": "pnpm -r --if-present run typecheck"
+  }
+}
