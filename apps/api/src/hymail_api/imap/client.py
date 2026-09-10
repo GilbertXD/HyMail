@@ -138,6 +138,27 @@ class ImapClient:
         self._ensure_response_ok(response, "select")
         return self._parse_select_response(folder, response)
 
+    async def list_uids(self, folder: str) -> list[int]:
+        """Return every UID the mailbox currently holds.
+
+        Uses ``UID SEARCH`` rather than fetching headers, so reconciliation
+        costs one response line instead of one FETCH per message.
+        """
+        client = self._require_client()
+        await self.select_folder(folder)
+        try:
+            # aioimaplib's uid() allow-lists COPY/FETCH/EXPUNGE/STORE, so
+            # SEARCH goes through uid_search, which emits "UID SEARCH ALL".
+            response = await client.uid_search("ALL", charset=None)
+        except Exception as exc:
+            raise self._map_exception(exc, "search") from exc
+        self._ensure_response_ok(response, "search")
+
+        uids: list[int] = []
+        for line in response.lines:
+            uids.extend(_parse_search_line(line))
+        return uids
+
     async def fetch_messages(
         self,
         folder: str,
@@ -389,6 +410,33 @@ class ImapClient:
                 raw_message=raw_message,
                 parsed=parsed,
             )
+
+
+def _parse_search_line(line: object) -> list[int]:
+    """Pull UIDs out of one SEARCH response line.
+
+    aioimaplib strips the "* SEARCH" prefix from the untagged payload but
+    keeps the tagged trailer ("SEARCH completed") in the same list, so both
+    shapes have to be tolerated here rather than assumed away.
+    """
+    text = (
+        line.decode("utf-8", errors="replace")
+        if isinstance(line, bytes)
+        else str(line)
+    ).strip()
+    if not text:
+        return []
+
+    upper = text.upper()
+    if upper.startswith("* SEARCH"):
+        text = text[len("* SEARCH") :]
+    elif upper == "SEARCH" or upper.startswith("SEARCH "):
+        return []
+
+    tokens = text.split()
+    if not tokens or not all(token.isdigit() for token in tokens):
+        return []
+    return [int(token) for token in tokens]
 
 
 def _quote_mailbox(name: str) -> str:

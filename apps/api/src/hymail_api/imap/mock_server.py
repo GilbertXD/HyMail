@@ -82,6 +82,15 @@ class MockImapServer:
     def clear_mailbox(self, mailbox: str = "INBOX") -> None:
         self.folders[mailbox] = []
 
+    def remove_message(self, uid: int, mailbox: str = "INBOX") -> bool:
+        """Model a server-side delete/expunge of one UID."""
+        messages = self.folders.get(mailbox, [])
+        for index, message in enumerate(messages):
+            if message.uid == uid:
+                messages.pop(index)
+                return True
+        return False
+
     async def _handle_client(
         self,
         reader: asyncio.StreamReader,
@@ -167,7 +176,13 @@ class MockImapServer:
                     )
                 elif upper == "UID":
                     subcommand, rest = self._parse_uid_args(args)
-                    if subcommand == "FETCH" and selected_mailbox:
+                    if subcommand == "SEARCH" and selected_mailbox:
+                        await self._handle_search(
+                            writer,
+                            tag,
+                            selected_mailbox,
+                        )
+                    elif subcommand == "FETCH" and selected_mailbox:
                         if self.scenario.disconnect_on_fetch and not fetch_disconnected:
                             fetch_disconnected = True
                             await self._handle_fetch(
@@ -262,6 +277,19 @@ class MockImapServer:
         )
         mode = "READ-ONLY" if readonly else "READ-WRITE"
         await self._write_ok(writer, tag, f"[{mode}] SELECT completed")
+
+    async def _handle_search(
+        self,
+        writer: asyncio.StreamWriter,
+        tag: str,
+        mailbox: str,
+    ) -> None:
+        uids = sorted(
+            message.uid for message in self.folders.get(mailbox, [])
+        )
+        listing = " ".join(str(uid) for uid in uids)
+        await self._write_line(writer, f"* SEARCH {listing}".rstrip().encode())
+        await self._write_ok(writer, tag, "SEARCH completed")
 
     async def _handle_fetch(
         self,
