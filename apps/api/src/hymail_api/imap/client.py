@@ -1,6 +1,6 @@
 import contextlib
 import re
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterator, Sequence
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 from typing import Any
@@ -158,6 +158,45 @@ class ImapClient:
         for line in response.lines:
             uids.extend(_parse_search_line(line))
         return uids
+
+    async def fetch_flags(self, folder: str) -> dict[int, frozenset[str]]:
+        """Return the server's FLAGS for every message in the mailbox."""
+        await self.select_folder(folder)
+        response = await self._fetch("1:*", include_body=False)
+        self._ensure_response_ok(response, "fetch")
+        return {
+            message.uid: message.flags
+            for message in self._parse_fetch_response(response)
+        }
+
+    async def store_flags(
+        self,
+        folder: str,
+        uid: int,
+        flags: Sequence[str],
+        *,
+        add: bool = True,
+    ) -> None:
+        """Add or remove flags on one message.
+
+        STORE is naturally idempotent, so a retry after an unclear failure has
+        no additional effect.
+        """
+        if not flags:
+            return
+        client = self._require_client()
+        await self.select_folder(folder)
+        item = "+FLAGS" if add else "-FLAGS"
+        try:
+            response = await client.uid(
+                "STORE",
+                str(uid),
+                item,
+                "(" + " ".join(flags) + ")",
+            )
+        except Exception as exc:
+            raise self._map_exception(exc, "store") from exc
+        self._ensure_response_ok(response, "store")
 
     async def fetch_messages(
         self,

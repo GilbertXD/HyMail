@@ -211,6 +211,68 @@ async def test_client_fetches_sparse_uid_ranges(
     await client.close()
 
 
+async def test_client_stores_and_reads_back_flags(
+    server: MockImapServer,
+) -> None:
+    server.add_message(make_raw_message("One"), uid=1)
+
+    client = ImapClient(
+        host="127.0.0.1",
+        port=server.port,
+        ssl=False,
+        username="user@example.com",
+        password="secret",
+        timeout=2.0,
+    )
+    await client.connect()
+
+    assert await client.fetch_flags("INBOX") == {1: frozenset()}
+
+    await client.store_flags("INBOX", 1, ["\\Seen"])
+    assert await client.fetch_flags("INBOX") == {1: frozenset({"\\Seen"})}
+
+    await client.store_flags("INBOX", 1, ["\\Seen", "\\Flagged"])
+    assert await client.fetch_flags("INBOX") == {
+        1: frozenset({"\\Seen", "\\Flagged"})
+    }
+
+    await client.store_flags("INBOX", 1, ["\\Seen"], add=False)
+    assert await client.fetch_flags("INBOX") == {1: frozenset({"\\Flagged"})}
+
+    # STORE is idempotent, which is what makes retries safe.
+    await client.store_flags("INBOX", 1, ["\\Flagged"])
+    assert await client.fetch_flags("INBOX") == {1: frozenset({"\\Flagged"})}
+
+    await client.close()
+
+
+async def test_flags_fetch_does_not_pull_bodies(
+    server: MockImapServer,
+) -> None:
+    """RFC822.SIZE is metadata; the mock must not answer with a literal."""
+    server.add_message(make_raw_message("One"), uid=1)
+
+    client = ImapClient(
+        host="127.0.0.1",
+        port=server.port,
+        ssl=False,
+        username="user@example.com",
+        password="secret",
+        timeout=2.0,
+    )
+    await client.connect()
+    await client.select_folder("INBOX")
+
+    raw = await client._fetch("1:*", include_body=False)
+
+    assert not any(
+        b"BODY[]" in line
+        for line in raw.lines
+        if isinstance(line, bytes)
+    )
+    await client.close()
+
+
 async def test_client_round_trips_non_ascii_folder_names(
     server: MockImapServer,
 ) -> None:

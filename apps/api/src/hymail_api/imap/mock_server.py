@@ -1,11 +1,16 @@
 import asyncio
 import contextlib
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from hymail_api.imap.utf7 import decode_mailbox, encode_mailbox
 
 CRLF = b"\r\n"
+
+# RFC822.SIZE and RFC822.HEADER ask for metadata, not the message body, so a
+# plain substring check would send the body for every flags-only FETCH.
+_BODY_REQUEST_RE = re.compile(r"BODY(?:\.PEEK)?\[\]|RFC822(?!\.)")
 
 
 @dataclass(slots=True)
@@ -182,6 +187,13 @@ class MockImapServer:
                             tag,
                             selected_mailbox,
                         )
+                    elif subcommand == "STORE" and selected_mailbox:
+                        await self._handle_store(
+                            writer,
+                            tag,
+                            rest,
+                            selected_mailbox,
+                        )
                     elif subcommand == "FETCH" and selected_mailbox:
                         if self.scenario.disconnect_on_fetch and not fetch_disconnected:
                             fetch_disconnected = True
@@ -291,6 +303,45 @@ class MockImapServer:
         await self._write_line(writer, f"* SEARCH {listing}".rstrip().encode())
         await self._write_ok(writer, tag, "SEARCH completed")
 
+    async def _handle_store(
+        self,
+        writer: asyncio.StreamWriter,
+        tag: str,
+        rest: str,
+        mailbox: str,
+    ) -> None:
+        """Apply a UID STORE of the form "<uid> +FLAGS (\\Seen)"."""
+        set_part, _, flag_part = rest.partition(" ")
+        item, _, flags_raw = flag_part.partition(" ")
+        add = item.startswith("+")
+        flags = [
+            flag for flag in flags_raw.strip().strip("()").split() if flag
+        ]
+
+        try:
+            target = int(set_part)
+        except ValueError:
+            await self._write_bad(writer, tag, "STORE needs a numeric UID")
+            return
+
+        messages = self.folders.get(mailbox, [])
+        for sequence, message in enumerate(messages, start=1):
+            if message.uid != target:
+                continue
+            for flag in flags:
+                if add and flag not in message.flags:
+                    message.flags.append(flag)
+                elif not add and flag in message.flags:
+                    message.flags.remove(flag)
+            await self._write_line(
+                writer,
+                (
+                    f"* {sequence} FETCH (UID {message.uid} "
+                    f"FLAGS ({' '.join(message.flags)}))"
+                ).encode(),
+            )
+        await self._write_ok(writer, tag, "STORE completed")
+
     async def _handle_fetch(
         self,
         writer: asyncio.StreamWriter,
@@ -302,10 +353,7 @@ class MockImapServer:
     ) -> None:
         set_part, _, parts_raw = rest.partition(" ")
         start, end = self._parse_sequence_set(set_part)
-        include_body = any(
-            token in parts_raw
-            for token in ("BODY.PEEK[]", "BODY[]", "RFC822")
-        )
+        include_body = bool(_BODY_REQUEST_RE.search(parts_raw))
         include_header = any(
             token in parts_raw
             for token in ("BODY.PEEK[HEADER]", "BODY[HEADER]", "RFC822.HEADER")
