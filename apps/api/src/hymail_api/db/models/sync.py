@@ -63,6 +63,9 @@ class SyncCursor(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     last_reconcile_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
+    last_flags_reconcile_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
 
 
 class SyncEvent(Base):

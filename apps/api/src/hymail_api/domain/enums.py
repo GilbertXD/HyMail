@@ -57,3 +57,20 @@ class SyncBatchState(StrEnum):
     FAILED = "failed"
     CANCELLED = "cancelled"
     EMPTY = "empty"
+
+
+class OutboxActionType(StrEnum):
+    """A local change that has to reach the server."""
+
+    MARK_READ = "mark_read"
+    STAR = "star"
+
+
+class OutboxActionState(StrEnum):
+    """Lifecycle of one queued write, mirroring PLAN.md."""
+
+    PENDING = "pending"
+    INFLIGHT = "inflight"
+    SUCCESS = "success"
+    FAILED = "failed"
+    ABANDONED = "abandoned"

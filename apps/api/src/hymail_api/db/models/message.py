@@ -30,6 +30,7 @@ class Message(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
         Index("ix_message_folder_id_date", "folder_id", "date"),
         Index("ix_message_folder_id_uid", "folder_id", "uid"),
+        Index("ix_message_folder_id_is_read", "folder_id", "is_read"),
         Index(
             "ix_message_folder_id_remote_missing",
             "folder_id",
@@ -85,4 +86,16 @@ class Message(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     remote_missing_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
+    )
+    # Mirrors the \Seen and \Flagged flags so the UI can filter without
+    # unpacking flags_json on every row.
+    is_read: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+    is_starred: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
     )

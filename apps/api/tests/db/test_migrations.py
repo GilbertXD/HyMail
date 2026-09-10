@@ -35,6 +35,7 @@ def test_migrations_create_expected_tables(tmp_path: Path) -> None:
         "alembic_version",
         "folder",
         "message",
+        "outbox_action",
         "sync_cursor",
         "sync_event",
         "sync_job",
@@ -52,10 +53,20 @@ def test_migrations_create_expected_tables(tmp_path: Path) -> None:
             row[1]
             for row in connection.execute("PRAGMA table_info(sync_cursor)")
         }
+        outbox_columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(outbox_action)")
+        }
 
     assert {"remote_missing", "remote_missing_at"}.issubset(message_columns)
+    assert {"is_read", "is_starred"}.issubset(message_columns)
     assert "kind" in job_columns
-    assert "last_reconcile_at" in cursor_columns
+    assert {"last_reconcile_at", "last_flags_reconcile_at"}.issubset(
+        cursor_columns
+    )
+    assert {"type", "state", "payload_json", "lease_expires_at"}.issubset(
+        outbox_columns
+    )
 
 
 def test_migration_can_downgrade_to_base(tmp_path: Path) -> None:
