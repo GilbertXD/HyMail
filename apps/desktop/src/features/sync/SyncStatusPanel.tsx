@@ -26,7 +26,10 @@ export function SyncStatusPanel({
           </h2>
           <p className="mt-1 text-sm text-slate-500">
             状态：
-            <span className="ml-1 font-medium text-slate-900">
+            <span
+              className="ml-1 font-medium text-slate-900"
+              data-testid="sync-state"
+            >
               {retrying ? "重试中" : formatSyncState(status.state)}
             </span>
           </p>
@@ -39,7 +42,12 @@ export function SyncStatusPanel({
       <dl className="mt-6 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
         <div>
           <dt className="text-slate-400">last UID</dt>
-          <dd className="mt-1 font-medium text-slate-900">{status.last_uid}</dd>
+          <dd
+            className="mt-1 font-medium text-slate-900"
+            data-testid="sync-last-uid"
+          >
+            {status.last_uid}
+          </dd>
         </div>
         <div>
           <dt className="text-slate-400">UIDVALIDITY</dt>

@@ -109,7 +109,6 @@ export function AccountSetupPage() {
 
   return (
     <AccountSetupForm
-      key={accountQuery.data?.id ?? "new"}
       initialForm={
         accountQuery.data ? toFormState(accountQuery.data) : initialState
       }

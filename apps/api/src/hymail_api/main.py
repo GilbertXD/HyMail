@@ -1,6 +1,7 @@
 from collections.abc import Callable
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from hymail_api.api.router import api_router
@@ -22,6 +23,16 @@ def create_app(
         version=settings.version,
         docs_url="/docs",
         redoc_url=None,
+    )
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "http://127.0.0.1:5173",
+            "http://localhost:5173",
+        ],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
     application.state.session_factory = session_factory
     application.state.sync_manager = SyncManager(
