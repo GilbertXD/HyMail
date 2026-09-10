@@ -191,5 +191,26 @@ COPYUID（那是 UIDPLUS 的能力）。命中多个文件夹时不会给结论�
 
     uv run pytest tests/sync/test_engine_moves.py -v
 
+## 12. 同步指标
+
+跑过几轮同步和对账之后，展开「同步详情」，最下面是「同步指标」：
+
+- 最近 24 小时的同步次数、失败率、拉取邮件数、重试次数
+- 平均耗时与 P95 耗时（P95 用 nearest-rank，SQLite 没有百分位函数）
+- 待发送修改的数量，以及其中多少发送失败
+- 每个文件夹一行的下钻：同步次数、失败、拉取量、平均耗时、最后同步时间
+
+也可以直接看接口：
+
+    Invoke-RestMethod "http://127.0.0.1:8000/api/v1/metrics?window_hours=24" | ConvertTo-Json -Depth 4
+
+想看失败率不是 0 的样子，用 `--disconnect-on-fetch` 启动 demo server 同步几次，
+再换回正常模式：指标里会留下失败与重试的计数。
+
+自动化测试覆盖：
+
+    uv run pytest tests/api/test_metrics_api.py tests/test_metric_math.py -v
+
+
 
 
