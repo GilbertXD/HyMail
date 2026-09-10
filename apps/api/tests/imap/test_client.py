@@ -180,3 +180,32 @@ async def test_client_maps_disconnect_after_command(
 
     with pytest.raises(ImapConnectionError):
         await client.list_folders()
+
+async def test_client_fetches_sparse_uid_ranges(
+    server: MockImapServer,
+) -> None:
+    server.add_message(make_raw_message("Sparse Ten"), uid=10)
+    server.add_message(make_raw_message("Sparse Eleven"), uid=11)
+    server.add_message(make_raw_message("Sparse Twelve"), uid=12)
+
+    client = ImapClient(
+        host="127.0.0.1",
+        port=server.port,
+        ssl=False,
+        username="user@example.com",
+        password="secret",
+        timeout=2.0,
+    )
+    await client.connect()
+
+    messages = [
+        message
+        async for message in client.fetch_messages(
+            "INBOX",
+            1,
+            batch_size=3,
+        )
+    ]
+
+    assert [message.uid for message in messages] == [10, 11, 12]
+    await client.close()

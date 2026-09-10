@@ -148,6 +148,7 @@ class ImapClient:
         while end_uid is None or current <= end_uid:
             if end_uid is None:
                 uid_set = f"{current}:*"
+                batch_end = None
             else:
                 batch_end = min(current + batch_size - 1, end_uid)
                 uid_set = f"{current}:{batch_end}"
@@ -157,14 +158,19 @@ class ImapClient:
             fetched = list(self._parse_fetch_response(response))
 
             if not fetched:
-                break
+                if end_uid is None or batch_end is None:
+                    break
+                current = batch_end + 1
+                continue
+
             for message in fetched:
                 yield message
 
-            highest_uid = max(message.uid for message in fetched)
-            current = highest_uid + 1
-            if end_uid is None and len(fetched) < batch_size:
-                continue
+            if end_uid is None:
+                highest_uid = max(message.uid for message in fetched)
+                current = highest_uid + 1
+            else:
+                current = batch_end + 1
 
     async def _fetch(self, uid_set: str, *, include_body: bool) -> Any:
         client = self._require_client()
