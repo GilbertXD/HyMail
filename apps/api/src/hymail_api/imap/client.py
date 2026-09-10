@@ -22,6 +22,17 @@ from hymail_api.imap.utf7 import decode_mailbox, encode_mailbox
 _FETCH_START_RE = re.compile(rb"(?:\* )?\d+ FETCH \(")
 _LITERAL_SIZE_RE = re.compile(rb"\{(\d+)\}$")
 
+# Providers reject a session mid-stream, not only at LOGIN: 163 answers SELECT
+# with "Unsafe Login", which is an authentication problem, not a protocol one.
+_AUTH_FAILURE_TOKENS = (
+    "authenticationfailed",
+    "authentication failed",
+    "unsafe login",
+    "invalid credentials",
+    "login failed",
+    "authorization failed",
+)
+
 
 class ImapClient:
     def __init__(
@@ -234,6 +245,8 @@ class ImapClient:
             for token in ("limit", "rate", "too many", "throttl")
         ):
             raise ImapRateLimitError(message or f"{operation} failed")
+        if any(token in lowered for token in _AUTH_FAILURE_TOKENS):
+            raise ImapAuthenticationError(message or f"{operation} failed")
         if operation in {"login", "connect"}:
             raise ImapAuthenticationError(message or "authentication failed")
         raise ImapProtocolError(message or f"{operation} failed")
