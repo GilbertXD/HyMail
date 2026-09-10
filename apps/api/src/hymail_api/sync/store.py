@@ -9,6 +9,48 @@ from hymail_api.db.models.folder import Folder
 from hymail_api.db.models.message import Message
 from hymail_api.db.models.sync import SyncCursor, SyncEvent
 from hymail_api.imap.dto import FetchedMessage, RemoteFolder
+from hymail_api.imap.utf7 import decode_mailbox
+
+
+async def normalize_folder_names(
+    session: AsyncSession,
+    account_id: UUID,
+) -> int:
+    """Rewrite folder names that were stored in modified UTF-7 form.
+
+    Rows written before the codec existed kept the raw wire name (for example
+    ``&XfJSIJZk-`` instead of ``已删除``), which no longer matches the decoded
+    names the IMAP layer now produces. Renaming in place preserves the row id,
+    so already-synced messages and cursor progress stay attached.
+
+    When the decoded name is already taken the row is left alone rather than
+    merged, because merging would have to reconcile duplicate UIDs.
+    """
+    folders = list(
+        await session.scalars(
+            select(Folder).where(Folder.account_id == account_id)
+        )
+    )
+    taken = {folder.name for folder in folders}
+    renamed = 0
+
+    for folder in folders:
+        decoded = decode_mailbox(folder.name)
+        if decoded == folder.name or decoded in taken:
+            continue
+        taken.discard(folder.name)
+        taken.add(decoded)
+        folder.name = decoded
+        renamed += 1
+
+    if renamed:
+        # Sessions run with autoflush disabled, so the renames would otherwise
+        # stay in the identity map. A later lookup in the same transaction
+        # would read the stale name, miss the row, and insert a duplicate that
+        # collides with this very rename on (account_id, name).
+        await session.flush()
+
+    return renamed
 
 
 async def get_or_create_folder(

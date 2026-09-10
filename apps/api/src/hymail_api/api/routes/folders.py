@@ -11,7 +11,7 @@ from hymail_api.imap.errors import ImapError
 from hymail_api.schemas.folder import FolderRead
 from hymail_api.schemas.message import MessageSummary
 from hymail_api.services import accounts
-from hymail_api.sync.store import get_or_create_folder
+from hymail_api.sync.store import get_or_create_folder, normalize_folder_names
 
 router = APIRouter()
 
@@ -32,6 +32,10 @@ async def refresh_folders(session: SessionDep) -> list[FolderRead]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     finally:
         await client.close()
+
+    # Heal names stored before the modified UTF-7 codec existed, before the
+    # loop below can create a second row for the same remote mailbox.
+    await normalize_folder_names(session, account.id)
 
     for remote_folder in remote_folders:
         if any(
