@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 // Must track the mock IMAP server started by playwright.config.ts.
 const IMAP_PORT = process.env.HYMAIL_E2E_IMAP_PORT ?? "11430";
+const API_BASE = `http://127.0.0.1:${process.env.HYMAIL_E2E_API_PORT ?? "8000"}`;
 
 test("v0.0.1 account setup and sync demo path", async ({ page }) => {
   await page.goto("/setup");
@@ -119,4 +120,35 @@ test("sync all folders in one click", async ({ page }) => {
   await expect(rows.filter({ hasText: "Sent" }).first()).toContainText(
     "已完成",
   );
+});
+
+test("reconcile marks mail deleted on the server", async ({
+  page,
+  request,
+}) => {
+  await page.goto("/setup");
+  await page.getByPlaceholder("you@example.com").fill("user@example.com");
+  await page.getByRole("combobox").selectOption("custom");
+  await page.getByPlaceholder("imap.example.com").fill("127.0.0.1");
+  await page.getByPlaceholder("993").fill(IMAP_PORT);
+  await page.getByRole("checkbox").uncheck();
+  await page.getByPlaceholder("IMAP 授权码").fill("secret");
+  await page.getByRole("button", { name: "保存账号" }).click();
+  await expect(page.getByText("账号已保存")).toBeVisible();
+
+  await page.getByRole("link", { name: "邮件" }).click();
+  await page.getByRole("button", { name: "刷新文件夹" }).click();
+
+  // Delete UID 1 on the server, exactly as another device would.
+  const removed = await request.post(`${API_BASE}/__e2e/messages/remove`, {
+    data: { uid: 1, mailbox: "INBOX" },
+  });
+  expect(removed.ok()).toBeTruthy();
+
+  await page.getByTestId("mail-reconcile").click();
+
+  await expect(
+    page.getByTestId("message-remote-missing").first(),
+  ).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("E2E One")).toBeVisible();
 });

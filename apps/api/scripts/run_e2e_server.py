@@ -105,6 +105,17 @@ async def main() -> None:
         imap_client_factory=client_factory,
         allowed_origins=ALLOWED_ORIGINS,
     )
+
+    # Test-only control surface. Defined here rather than in the app so it can
+    # never ship: it lets a browser test delete a message server-side and then
+    # observe reconciliation noticing.
+    @app.post("/__e2e/messages/remove")
+    async def _remove_message(payload: dict[str, object]) -> dict[str, bool]:
+        removed = mock_server.remove_message(
+            int(payload["uid"]),  # type: ignore[arg-type]
+            mailbox=str(payload.get("mailbox", "INBOX")),
+        )
+        return {"removed": removed}
     config = uvicorn.Config(
         app,
         host="127.0.0.1",

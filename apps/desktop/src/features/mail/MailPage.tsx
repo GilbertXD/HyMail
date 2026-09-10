@@ -20,6 +20,7 @@ import {
   listSyncEvents,
   listSyncJobs,
   refreshFolders,
+  triggerReconcile,
   triggerSync,
   triggerSyncAll,
 } from "../../lib/api";
@@ -156,6 +157,17 @@ export function MailPage() {
 
   const triggerAllMutation = useMutation({
     mutationFn: () => triggerSyncAll(),
+    onSuccess: (result) => {
+      if (result.queued > 0) {
+        setBatchId(result.batch_id);
+      }
+      queryClient.invalidateQueries({ queryKey: ["sync-jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["sync-status"] });
+    },
+  });
+
+  const reconcileMutation = useMutation({
+    mutationFn: () => triggerReconcile(),
     onSuccess: (result) => {
       if (result.queued > 0) {
         setBatchId(result.batch_id);
@@ -348,6 +360,16 @@ export function MailPage() {
           <button
             type="button"
             className="rounded border border-slate-300 px-2 py-1 font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40 dark:border-gh-border dark:text-gh-fg dark:hover:bg-gh-overlay"
+            onClick={() => reconcileMutation.mutate()}
+            disabled={reconcileMutation.isPending || batchRunning}
+            title="拉取新邮件，并检查哪些邮件已不在服务器上"
+            data-testid="mail-reconcile"
+          >
+            对账
+          </button>
+          <button
+            type="button"
+            className="rounded border border-slate-300 px-2 py-1 font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40 dark:border-gh-border dark:text-gh-fg dark:hover:bg-gh-overlay"
             onClick={() => cancelMutation.mutate()}
             disabled={
               (!selectedFolder && !batchRunning) || cancelMutation.isPending
@@ -454,6 +476,14 @@ export function MailPage() {
                     {message.folder_name}
                   </span>
                 ) : null}
+                {message.remote_missing ? (
+                  <span
+                    className="shrink-0 rounded bg-red-50 px-2 py-0.5 text-red-700 dark:bg-gh-danger-subtle dark:text-gh-danger"
+                    data-testid="message-remote-missing"
+                  >
+                    远端已删除
+                  </span>
+                ) : null}
                 <span className="truncate">
                   {message.from_name || message.from_addr || "未知发件人"}
                 </span>
@@ -526,6 +556,11 @@ export function MailPage() {
                         {messageQuery.data.from_addr || "未知"} &gt;
                       </div>
                       <div>{formatDateTime(messageQuery.data.date)}</div>
+                      {messageQuery.data.remote_missing ? (
+                        <div className="pt-1 text-red-600 dark:text-gh-danger">
+                          这封邮件已不在服务器上，可能被其它设备删除或移动了。
+                        </div>
+                      ) : null}
                     </div>
                   </header>
 

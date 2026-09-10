@@ -22,6 +22,11 @@ const STATE_STYLES: Record<string, string> = {
     "bg-slate-100 text-slate-500 dark:bg-gh-overlay dark:text-gh-fg-subtle",
 };
 
+const KIND_LABELS: Record<string, string> = {
+  sync: "同步",
+  reconcile: "对账",
+};
+
 export function SyncJobQueue({ jobs }: { jobs: SyncJobRead[] }) {
   if (!jobs.length) {
     return (
@@ -44,8 +49,13 @@ export function SyncJobQueue({ jobs }: { jobs: SyncJobRead[] }) {
             data-testid="sync-job-row"
           >
             <div className="min-w-0">
-              <div className="truncate text-sm font-medium text-slate-900 dark:text-gh-fg">
-                {job.folder_name}
+              <div className="flex items-center gap-2">
+                <span className="truncate text-sm font-medium text-slate-900 dark:text-gh-fg">
+                  {job.folder_name}
+                </span>
+                <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500 dark:bg-gh-overlay dark:text-gh-fg-muted">
+                  {KIND_LABELS[job.kind] ?? job.kind}
+                </span>
               </div>
               <div className="mt-0.5 text-xs text-slate-400 dark:text-gh-fg-subtle">
                 {formatDateTime(job.created_at)}

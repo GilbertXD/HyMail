@@ -127,6 +127,17 @@ export async function triggerSyncAll(
   );
 }
 
+/** Queue a reconcile pass: pull new mail, then notice server-side deletions. */
+export async function triggerReconcile(
+  folderNames?: string[],
+): Promise<SyncTriggerResponse> {
+  return unwrap(
+    await apiClient.POST("/api/v1/sync/reconcile", {
+      body: { folder_names: folderNames ?? null },
+    }),
+  );
+}
+
 export async function getSyncBatch(
   batchId: string,
 ): Promise<SyncBatchRead> {

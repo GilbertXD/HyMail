@@ -180,6 +180,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sync/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trigger Reconcile
+         * @description Queue a reconcile pass.
+         *
+         *     Each job pulls new mail first and then compares the server UID set against
+         *     the local one, flagging messages that are no longer there.
+         */
+        post: operations["trigger_reconcile_api_v1_sync_reconcile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sync/cancel": {
         parameters: {
             query?: never;
@@ -443,6 +466,11 @@ export interface components {
             folder_name?: string | null;
             /** Account Email */
             account_email?: string | null;
+            /**
+             * Remote Missing
+             * @default false
+             */
+            remote_missing: boolean;
             /** To */
             to: string[];
             /** Cc */
@@ -484,6 +512,11 @@ export interface components {
             folder_name?: string | null;
             /** Account Email */
             account_email?: string | null;
+            /**
+             * Remote Missing
+             * @default false
+             */
+            remote_missing: boolean;
         };
         /** SyncBatchRead */
         SyncBatchRead: {
@@ -572,6 +605,8 @@ export interface components {
              * Format: uuid
              */
             batch_id: string;
+            /** Kind */
+            kind: string;
             /** State */
             state: string;
             /** Priority */
@@ -932,6 +967,39 @@ export interface operations {
         };
     };
     trigger_all_sync_api_v1_sync_trigger_all_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncTriggerAllRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncTriggerResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trigger_reconcile_api_v1_sync_reconcile_post: {
         parameters: {
             query?: never;
             header?: never;

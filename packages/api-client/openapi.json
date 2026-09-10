@@ -414,6 +414,48 @@
         }
       }
     },
+    "/api/v1/sync/reconcile": {
+      "post": {
+        "tags": [
+          "sync"
+        ],
+        "summary": "Trigger Reconcile",
+        "description": "Queue a reconcile pass.\n\nEach job pulls new mail first and then compares the server UID set against\nthe local one, flagging messages that are no longer there.",
+        "operationId": "trigger_reconcile_api_v1_sync_reconcile_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncTriggerAllRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncTriggerResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/sync/cancel": {
       "post": {
         "tags": [
@@ -1151,6 +1193,11 @@
             ],
             "title": "Account Email"
           },
+          "remote_missing": {
+            "type": "boolean",
+            "title": "Remote Missing",
+            "default": false
+          },
           "to": {
             "items": {
               "type": "string"
@@ -1318,6 +1365,11 @@
               }
             ],
             "title": "Account Email"
+          },
+          "remote_missing": {
+            "type": "boolean",
+            "title": "Remote Missing",
+            "default": false
           }
         },
         "type": "object",
@@ -1582,6 +1634,10 @@
             "format": "uuid",
             "title": "Batch Id"
           },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
           "state": {
             "type": "string",
             "title": "State"
@@ -1653,6 +1709,7 @@
           "folder_id",
           "folder_name",
           "batch_id",
+          "kind",
           "state",
           "priority",
           "attempts",
