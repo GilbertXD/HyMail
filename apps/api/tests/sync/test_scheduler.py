@@ -146,7 +146,11 @@ async def _wait_for_job_state(
 async def scheduler_factory(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> AsyncIterator[list[SyncScheduler]]:
-    """Hands out schedulers and guarantees they are stopped afterwards."""
+    """Hands out schedulers and stops them before the engine is disposed.
+
+    Depending on ``session_factory`` is what orders the teardown: a worker
+    still querying after the engine closes logs "Event loop is closed".
+    """
     created: list[SyncScheduler] = []
     yield created
     for scheduler in created:

@@ -134,6 +134,7 @@ class SyncScheduler:
 
         self._workers: list[asyncio.Task[None]] = []
         self._running: dict[UUID, _JobTask] = {}
+        self._stopping = False
         self._wakeup = asyncio.Event()
         self._start_lock = asyncio.Lock()
         # Serialises claim transactions so two workers cannot both observe an
@@ -147,18 +148,32 @@ class SyncScheduler:
             if self._workers:
                 return
             await self.recover_stale_jobs()
+            self._stopping = False
             self._workers = [
                 asyncio.create_task(self._worker())
                 for _ in range(self._max_workers)
             ]
 
     async def stop(self) -> None:
+        """Ask workers to finish their current step and exit.
+
+        Cancelling outright can land mid-query and leave an aiosqlite thread
+        delivering a result to a closed loop, so workers are woken and given a
+        moment to leave their loop on their own first.
+        """
         workers, self._workers = self._workers, []
+        if not workers:
+            return
+        self._stopping = True
+        self._wakeup.set()
         for worker in workers:
-            worker.cancel()
-        for worker in workers:
-            with contextlib.suppress(asyncio.CancelledError):
-                await worker
+            with contextlib.suppress(TimeoutError, asyncio.CancelledError):
+                await asyncio.wait_for(worker, timeout=5.0)
+            if not worker.done():
+                worker.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await worker
+        self._stopping = False
 
     async def recover_stale_jobs(self) -> int:
         """Re-queue jobs whose worker died while holding a lease.
@@ -426,7 +441,7 @@ class SyncScheduler:
     async def _worker(self) -> None:
         connection = _Connection()
         try:
-            while True:
+            while not self._stopping:
                 claimed = await self._claim_next()
                 if claimed is None:
                     await connection.close()

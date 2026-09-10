@@ -16,6 +16,7 @@ from hymail_api.db.models.account import Account
 from hymail_api.db.session import SessionLocal
 from hymail_api.imap.client import ImapClient
 from hymail_api.services.accounts import build_imap_client
+from hymail_api.services.outbox import OutboxDispatcher
 from hymail_api.services.sync_scheduler import SyncScheduler
 
 
@@ -26,6 +27,7 @@ def create_app(
     api_token: str | None = None,
     allowed_origins: Sequence[str] | None = None,
     scheduler: SyncScheduler | None = None,
+    outbox_dispatcher: OutboxDispatcher | None = None,
 ) -> FastAPI:
     effective_token = settings.api_token if api_token is None else api_token
     origins = list(allowed_origins or DEFAULT_ALLOWED_ORIGINS)
@@ -34,14 +36,20 @@ def create_app(
         session_factory=session_factory,
         client_factory=imap_client_factory,
     )
+    outbox = outbox_dispatcher or OutboxDispatcher(
+        session_factory=session_factory,
+        client_factory=imap_client_factory,
+    )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         # Re-queues whatever a previous process left running before serving.
         await sync_scheduler.ensure_started()
+        await outbox.ensure_started()
         try:
             yield
         finally:
+            await outbox.stop()
             await sync_scheduler.stop()
 
     application = FastAPI(
@@ -68,6 +76,7 @@ def create_app(
     )
     application.state.session_factory = session_factory
     application.state.sync_scheduler = sync_scheduler
+    application.state.outbox_dispatcher = outbox
     application.include_router(api_router)
 
     @application.get("/health", tags=["system"])
