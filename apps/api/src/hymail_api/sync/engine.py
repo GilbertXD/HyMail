@@ -25,12 +25,14 @@ from hymail_api.imap.errors import (
 )
 from hymail_api.sync.backoff import calculate_backoff_delay
 from hymail_api.sync.store import (
+    apply_flag_reconcile,
     apply_reconcile,
     count_messages,
     delete_messages_for_folder,
     get_or_create_cursor,
     get_or_create_folder,
     list_message_uids,
+    list_queued_flag_message_ids,
     list_remote_missing_uids,
     update_folder_remote_state,
     upsert_messages,
@@ -56,6 +58,7 @@ class _PreparedSync:
 class _ReconcileOutcome:
     newly_missing: int
     restored: int
+    flags_changed: int
     local_total: int
     skipped: bool
 
@@ -202,6 +205,7 @@ class SyncEngine:
             if owned:
                 await active.connect()
             remote_uids = set(await active.list_uids(folder_name))
+            remote_flags = await active.fetch_flags(folder_name)
         finally:
             if owned:
                 await active.close()
@@ -215,6 +219,7 @@ class SyncEngine:
             account_id,
             sync_result.folder_id,
             remote_uids,
+            remote_flags,
             trace_id,
         )
         await self._set_cursor_state(
@@ -230,6 +235,7 @@ class SyncEngine:
             synced_count=sync_result.fetched_count,
             newly_missing=outcome.newly_missing,
             restored=outcome.restored,
+            flags_changed=outcome.flags_changed,
             remote_total=len(remote_uids),
             local_total=outcome.local_total,
             trace_id=trace_id,
@@ -243,6 +249,7 @@ class SyncEngine:
         account_id: UUID,
         folder_id: UUID,
         remote_uids: set[int],
+        remote_flags: dict[int, frozenset[str]],
         trace_id: str,
     ) -> _ReconcileOutcome:
         now = datetime.now(UTC)
@@ -273,6 +280,16 @@ class SyncEngine:
                 restored=restored,
             )
 
+            # Flag alignment runs after the deletion diff so a message that
+            # just disappeared is not reported twice.
+            queued = await list_queued_flag_message_ids(session, folder_id)
+            flags_changed = await apply_flag_reconcile(
+                session,
+                folder_id,
+                remote_flags,
+                queued,
+            )
+
             cursor = await session.scalar(
                 select(SyncCursor).where(
                     SyncCursor.account_id == account_id,
@@ -281,6 +298,7 @@ class SyncEngine:
             )
             if cursor is not None:
                 cursor.last_reconcile_at = now
+                cursor.last_flags_reconcile_at = now
                 cursor.state = SyncState.IDLE.value
 
             await write_event(
@@ -292,7 +310,8 @@ class SyncEngine:
                 event_type="sync.reconcile",
                 message=(
                     f"remote={len(remote_uids)} local={len(local_uids)} "
-                    f"missing={len(missing)} restored={len(restored)}"
+                    f"missing={len(missing)} restored={len(restored)} "
+                    f"flags={flags_changed} queued_flags={len(queued)}"
                     + (" skipped=empty-remote" if skipped else "")
                 ),
                 fetched_count=len(missing),
@@ -301,6 +320,7 @@ class SyncEngine:
         return _ReconcileOutcome(
             newly_missing=len(missing - already_flagged),
             restored=len(restored),
+            flags_changed=flags_changed,
             local_total=len(local_uids),
             skipped=skipped,
         )

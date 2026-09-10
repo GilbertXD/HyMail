@@ -111,6 +111,8 @@ async def list_messages(
             folder_name=folder.name,
             account_email=account.email,
             remote_missing=message.remote_missing,
+            is_read=message.is_read,
+            is_starred=message.is_starred,
         )
         for message in result
     ]

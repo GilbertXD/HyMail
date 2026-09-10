@@ -50,6 +50,8 @@ async def list_all_messages(
             folder_name=folder_name,
             account_email=email,
             remote_missing=message.remote_missing,
+            is_read=message.is_read,
+            is_starred=message.is_starred,
         )
         for message, folder_name, email in rows
     ]
@@ -89,4 +91,6 @@ async def get_message(
         body_text=message.body_text,
         body_html=message.body_html,
         remote_missing=message.remote_missing,
+        is_read=message.is_read,
+        is_starred=message.is_starred,
     )

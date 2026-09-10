@@ -8,9 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from hymail_api.db.models.folder import Folder
 from hymail_api.db.models.message import Message
+from hymail_api.db.models.outbox import OutboxAction
 from hymail_api.db.models.sync import SyncCursor, SyncEvent
+from hymail_api.domain.enums import OutboxActionState
 from hymail_api.imap.dto import FetchedMessage, RemoteFolder
 from hymail_api.imap.utf7 import decode_mailbox
+from hymail_api.sync.flags import flags_to_state
 
 
 async def normalize_folder_names(
@@ -153,29 +156,33 @@ async def upsert_messages(
         return 0
 
     updated_at = datetime.now(UTC)
-    rows = [
-        {
-            "id": uuid4(),
-            "account_id": account_id,
-            "folder_id": folder_id,
-            "uid": message.uid,
-            "message_id": message.parsed.message_id,
-            "subject": message.parsed.subject,
-            "from_name": message.parsed.from_name,
-            "from_addr": message.parsed.from_addr,
-            "to_json": message.parsed.to,
-            "cc_json": message.parsed.cc,
-            "date": message.parsed.date,
-            "internal_date": message.internal_date,
-            "size": message.size,
-            "flags_json": sorted(message.flags),
-            "raw_headers": _extract_headers(message.raw_message),
-            "body_text": message.parsed.body_text,
-            "body_html": message.parsed.body_html,
-            "updated_at": updated_at,
-        }
-        for message in messages
-    ]
+    rows = []
+    for message in messages:
+        is_read, is_starred = flags_to_state(message.flags)
+        rows.append(
+            {
+                "id": uuid4(),
+                "account_id": account_id,
+                "folder_id": folder_id,
+                "uid": message.uid,
+                "message_id": message.parsed.message_id,
+                "subject": message.parsed.subject,
+                "from_name": message.parsed.from_name,
+                "from_addr": message.parsed.from_addr,
+                "to_json": message.parsed.to,
+                "cc_json": message.parsed.cc,
+                "date": message.parsed.date,
+                "internal_date": message.internal_date,
+                "size": message.size,
+                "flags_json": sorted(message.flags),
+                "is_read": is_read,
+                "is_starred": is_starred,
+                "raw_headers": _extract_headers(message.raw_message),
+                "body_text": message.parsed.body_text,
+                "body_html": message.parsed.body_html,
+                "updated_at": updated_at,
+            }
+        )
 
     statement = sqlite_insert(Message).values(rows)
     excluded = statement.excluded
@@ -192,6 +199,8 @@ async def upsert_messages(
             "internal_date": excluded.internal_date,
             "size": excluded.size,
             "flags_json": excluded.flags_json,
+            "is_read": excluded.is_read,
+            "is_starred": excluded.is_starred,
             "raw_headers": excluded.raw_headers,
             "body_text": excluded.body_text,
             "body_html": excluded.body_html,
@@ -315,3 +324,68 @@ def _chunked(values: Iterable[int], size: int) -> Iterator[list[int]]:
             chunk = []
     if chunk:
         yield chunk
+
+
+async def list_queued_flag_message_ids(
+    session: AsyncSession,
+    folder_id: UUID,
+) -> set[UUID]:
+    """Messages whose flag change has not reached the server yet."""
+    ids = await session.scalars(
+        select(OutboxAction.message_id).where(
+            OutboxAction.folder_id == folder_id,
+            OutboxAction.state.in_(
+                [
+                    OutboxActionState.PENDING.value,
+                    OutboxActionState.INFLIGHT.value,
+                ]
+            ),
+        )
+    )
+    return set(ids)
+
+
+async def apply_flag_reconcile(
+    session: AsyncSession,
+    folder_id: UUID,
+    remote_flags: dict[int, frozenset[str]],
+    queued_message_ids: set[UUID],
+) -> int:
+    """Align local read/starred state with the server's FLAGS.
+
+    Messages with a queued local change are skipped. The server has not heard
+    about them yet, so believing its answer would silently undo the click the
+    user just made.
+    """
+    rows = (
+        await session.execute(
+            select(
+                Message.id,
+                Message.uid,
+                Message.is_read,
+                Message.is_starred,
+            ).where(Message.folder_id == folder_id)
+        )
+    ).all()
+
+    changed = 0
+    for message_id, uid, is_read, is_starred in rows:
+        if message_id in queued_message_ids:
+            continue
+        flags = remote_flags.get(uid)
+        if flags is None:
+            continue
+        new_read, new_starred = flags_to_state(flags)
+        if new_read == is_read and new_starred == is_starred:
+            continue
+        await session.execute(
+            update(Message)
+            .where(Message.id == message_id)
+            .values(
+                is_read=new_read,
+                is_starred=new_starred,
+                flags_json=sorted(flags),
+            )
+        )
+        changed += 1
+    return changed

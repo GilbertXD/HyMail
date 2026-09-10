@@ -18,6 +18,9 @@ class MessageSummary(BaseModel):
     account_email: str | None = None
     # Set by reconciliation when the UID is gone from the server.
     remote_missing: bool = False
+    # Mirrors the \Seen and \Flagged IMAP flags.
+    is_read: bool = False
+    is_starred: bool = False
 
 
 class MessageDetail(MessageSummary):

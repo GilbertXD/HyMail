@@ -139,3 +139,24 @@ async def get_last_reconcile_at(
                 Folder.name == folder_name,
             )
         )
+
+
+async def get_flag_states(
+    session_factory: async_sessionmaker[AsyncSession],
+    account_id: UUID,
+    folder_name: str,
+) -> list[tuple[int, bool, bool]]:
+    """(uid, is_read, is_starred) for every local message, ordered by uid."""
+    async with session_factory() as session:
+        rows = (
+            await session.execute(
+                select(Message.uid, Message.is_read, Message.is_starred)
+                .join(Folder, Folder.id == Message.folder_id)
+                .where(
+                    Message.account_id == account_id,
+                    Folder.name == folder_name,
+                )
+                .order_by(Message.uid)
+            )
+        ).all()
+        return [(uid, bool(read), bool(star)) for uid, read, star in rows]
