@@ -21,6 +21,19 @@ class MessageSummary(BaseModel):
     # Mirrors the \Seen and \Flagged IMAP flags.
     is_read: bool = False
     is_starred: bool = False
+    # "pending" / "inflight" / "failed" while a local flag change is still on
+    # its way to the server, so the UI can be honest about it.
+    outbox_state: str | None = None
+
+
+class MessageFlagUpdate(BaseModel):
+    """A local read/starred change.
+
+    Absent fields are left alone, so the two toggles never fight each other.
+    """
+
+    is_read: bool | None = None
+    is_starred: bool | None = None
 
 
 class MessageDetail(MessageSummary):

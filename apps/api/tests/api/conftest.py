@@ -14,6 +14,7 @@ from hymail_api.db.session import create_engine
 from hymail_api.imap.client import ImapClient
 from hymail_api.imap.mock_server import MockImapScenario, MockImapServer
 from hymail_api.main import create_app
+from hymail_api.services.outbox import OutboxDispatcher
 from hymail_api.services.sync_scheduler import SyncScheduler
 
 
@@ -82,10 +83,18 @@ async def app(session_factory, mock_server) -> AsyncIterator[FastAPI]:
             max_backoff_seconds=0.0,
             poll_interval=0.01,
         ),
+        outbox_dispatcher=OutboxDispatcher(
+            session_factory=session_factory,
+            client_factory=client_factory,
+            backoff_base_seconds=0.0,
+            max_backoff_seconds=0.0,
+            poll_interval=0.01,
+        ),
     )
     yield application
     # ASGITransport does not run lifespan, so the workers have to be stopped
     # explicitly or they outlive the test.
+    await application.state.outbox_dispatcher.stop()
     await application.state.sync_scheduler.stop()
 
 
