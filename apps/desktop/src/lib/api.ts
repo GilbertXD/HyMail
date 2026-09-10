@@ -26,6 +26,8 @@ export type SyncEventRead = components["schemas"]["SyncEventRead"];
 export type SyncTriggerResponse = components["schemas"]["SyncTriggerResponse"];
 export type SyncBatchRead = components["schemas"]["SyncBatchRead"];
 export type SyncJobRead = components["schemas"]["SyncJobRead"];
+export type OutboxActionRead = components["schemas"]["OutboxActionRead"];
+export type MessageFlagUpdate = components["schemas"]["MessageFlagUpdate"];
 
 export class ApiError extends Error {
   status: number;
@@ -92,6 +94,54 @@ export async function getMessage(messageId: string): Promise<MessageDetail> {
   return unwrap(
     await apiClient.GET("/api/v1/messages/{message_id}", {
       params: { path: { message_id: messageId } },
+    }),
+  );
+}
+
+/** Queue a local read/starred change; the write reaches the server later. */
+export async function updateMessageFlags(
+  messageId: string,
+  body: MessageFlagUpdate,
+): Promise<MessageDetail> {
+  return unwrap(
+    await apiClient.PATCH("/api/v1/messages/{message_id}", {
+      params: { path: { message_id: messageId } },
+      body,
+    }),
+  );
+}
+
+export async function listOutbox(
+  options: { limit?: number; activeOnly?: boolean } = {},
+): Promise<OutboxActionRead[]> {
+  return unwrap(
+    await apiClient.GET("/api/v1/outbox", {
+      params: {
+        query: {
+          limit: options.limit ?? 50,
+          active_only: options.activeOnly ?? false,
+        },
+      },
+    }),
+  );
+}
+
+export async function retryOutboxAction(
+  actionId: string,
+): Promise<{ updated: boolean }> {
+  return unwrap(
+    await apiClient.POST("/api/v1/outbox/{action_id}/retry", {
+      params: { path: { action_id: actionId } },
+    }),
+  );
+}
+
+export async function discardOutboxAction(
+  actionId: string,
+): Promise<{ updated: boolean }> {
+  return unwrap(
+    await apiClient.POST("/api/v1/outbox/{action_id}/discard", {
+      params: { path: { action_id: actionId } },
     }),
   );
 }

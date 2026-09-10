@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
 import { ErrorState, LoadingState } from "../../components/AsyncState";
+import { OutboxPanel } from "../sync/OutboxPanel";
 import { SyncEventTimeline } from "../sync/SyncEventTimeline";
 import { SyncJobQueue } from "../sync/SyncJobQueue";
 import { SyncStatusPanel } from "../sync/SyncStatusPanel";
@@ -23,6 +24,9 @@ import {
   triggerReconcile,
   triggerSync,
   triggerSyncAll,
+  updateMessageFlags,
+  type MessageFlagUpdate,
+  type MessageSummary,
 } from "../../lib/api";
 import { formatDateTime, formatSyncState } from "../../lib/format";
 
@@ -175,6 +179,50 @@ export function MailPage() {
       }
       queryClient.invalidateQueries({ queryKey: ["sync-jobs"] });
       queryClient.invalidateQueries({ queryKey: ["sync-status"] });
+    },
+  });
+
+  const flagMutation = useMutation({
+    mutationFn: ({
+      messageId,
+      body,
+    }: {
+      messageId: string;
+      body: MessageFlagUpdate;
+    }) => updateMessageFlags(messageId, body),
+    // Optimistic: paint the change now, and put it back if the request fails.
+    onMutate: async ({ messageId, body }) => {
+      // Only the fields actually sent, so the row type stays non-nullable.
+      const patch: Partial<MessageSummary> = {};
+      if (body.is_read != null) {
+        patch.is_read = body.is_read;
+      }
+      if (body.is_starred != null) {
+        patch.is_starred = body.is_starred;
+      }
+
+      await queryClient.cancelQueries({ queryKey: ["messages"] });
+      const snapshot = queryClient.getQueriesData<MessageSummary[]>({
+        queryKey: ["messages"],
+      });
+      queryClient.setQueriesData<MessageSummary[]>(
+        { queryKey: ["messages"] },
+        (current) =>
+          (current ?? []).map((message) =>
+            message.id === messageId ? { ...message, ...patch } : message,
+          ),
+      );
+      return { snapshot };
+    },
+    onError: (_error, _variables, context) => {
+      for (const [key, data] of context?.snapshot ?? []) {
+        queryClient.setQueryData(key, data);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["messages"] });
+      queryClient.invalidateQueries({ queryKey: ["message"] });
+      queryClient.invalidateQueries({ queryKey: ["outbox"] });
     },
   });
 
@@ -571,6 +619,7 @@ export function MailPage() {
                 />
               ) : null}
               <SyncJobQueue jobs={jobsQuery.data ?? []} />
+              <OutboxPanel enabled={showSyncDetail} />
             </>
           ) : (
             <>
@@ -590,9 +639,46 @@ export function MailPage() {
               {messageQuery.data ? (
                 <article className="space-y-3">
                   <header className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gh-border dark:bg-gh-subtle">
-                    <h1 className="text-xl font-semibold leading-7 text-slate-900 dark:text-gh-fg">
-                      {messageQuery.data.subject || "(无主题)"}
-                    </h1>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <h1 className="text-xl font-semibold leading-7 text-slate-900 dark:text-gh-fg">
+                        {messageQuery.data.subject || "(无主题)"}
+                      </h1>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <button
+                          type="button"
+                          className="rounded border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 dark:border-gh-border dark:text-gh-fg dark:hover:bg-gh-overlay"
+                          onClick={() =>
+                            flagMutation.mutate({
+                              messageId: messageQuery.data.id,
+                              body: {
+                                is_read: !messageQuery.data.is_read,
+                              },
+                            })
+                          }
+                          data-testid="toggle-read"
+                        >
+                          {messageQuery.data.is_read
+                            ? "标为未读"
+                            : "标为已读"}
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 dark:border-gh-border dark:text-gh-fg dark:hover:bg-gh-overlay"
+                          onClick={() =>
+                            flagMutation.mutate({
+                              messageId: messageQuery.data.id,
+                              body: {
+                                is_starred:
+                                  !messageQuery.data.is_starred,
+                              },
+                            })
+                          }
+                          data-testid="toggle-star"
+                        >
+                          {messageQuery.data.is_starred ? "★ 取消星标" : "☆ 加星"}
+                        </button>
+                      </div>
+                    </div>
                     <div className="mt-3 space-y-1 text-sm text-slate-500 dark:text-gh-fg-muted">
                       <div>
                         {messageQuery.data.from_name || "未知"} &lt;
@@ -602,6 +688,16 @@ export function MailPage() {
                       {messageQuery.data.remote_missing ? (
                         <div className="pt-1 text-red-600 dark:text-gh-danger">
                           这封邮件已不在服务器上，可能被其它设备删除或移动了。
+                        </div>
+                      ) : null}
+                      {messageQuery.data.outbox_state ? (
+                        <div
+                          className="pt-1 text-amber-600 dark:text-gh-fg-muted"
+                          data-testid="message-outbox-state"
+                        >
+                          {messageQuery.data.outbox_state === "failed"
+                            ? "这次修改还没送到服务器，可在「同步详情」里重试或丢弃。"
+                            : "这次修改正在发往服务器。"}
                         </div>
                       ) : null}
                     </div>

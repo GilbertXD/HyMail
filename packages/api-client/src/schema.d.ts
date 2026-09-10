@@ -137,6 +137,70 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
+        /**
+         * Update Message Flags
+         * @description Change read/starred locally and queue the write to the server.
+         *
+         *     The local row and the queued intent commit in one transaction: a crash
+         *     must not leave the interface claiming something the server was never told.
+         */
+        patch: operations["update_message_flags_api_v1_messages__message_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/outbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Outbox */
+        get: operations["list_outbox_api_v1_outbox_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/outbox/{action_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Action
+         * @description Put a failed change back in the queue.
+         */
+        post: operations["retry_action_api_v1_outbox__action_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/outbox/{action_id}/discard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Discard Action
+         * @description Drop a change and restore the local row to the server's state.
+         */
+        post: operations["discard_action_api_v1_outbox__action_id__discard_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
         patch?: never;
         trace?: never;
     };
@@ -481,6 +545,8 @@ export interface components {
              * @default false
              */
             is_starred: boolean;
+            /** Outbox State */
+            outbox_state?: string | null;
             /** To */
             to: string[];
             /** Cc */
@@ -491,6 +557,18 @@ export interface components {
             body_text: string | null;
             /** Body Html */
             body_html: string | null;
+        };
+        /**
+         * MessageFlagUpdate
+         * @description A local read/starred change.
+         *
+         *     Absent fields are left alone, so the two toggles never fight each other.
+         */
+        MessageFlagUpdate: {
+            /** Is Read */
+            is_read?: boolean | null;
+            /** Is Starred */
+            is_starred?: boolean | null;
         };
         /** MessageSummary */
         MessageSummary: {
@@ -537,6 +615,54 @@ export interface components {
              * @default false
              */
             is_starred: boolean;
+            /** Outbox State */
+            outbox_state?: string | null;
+        };
+        /** OutboxActionRead */
+        OutboxActionRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Message Id
+             * Format: uuid
+             */
+            message_id: string;
+            /**
+             * Folder Id
+             * Format: uuid
+             */
+            folder_id: string;
+            /** Folder Name */
+            folder_name: string;
+            /** Uid */
+            uid: number;
+            /** Type */
+            type: string;
+            /** State */
+            state: string;
+            /** Value */
+            value: boolean;
+            /** Attempts */
+            attempts: number;
+            /** Last Error */
+            last_error: string | null;
+            /** Next Retry At */
+            next_retry_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Subject */
+            subject: string | null;
+        };
+        /** OutboxMutationResponse */
+        OutboxMutationResponse: {
+            /** Updated */
+            updated: boolean;
         };
         /** SyncBatchRead */
         SyncBatchRead: {
@@ -940,6 +1066,135 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MessageDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_message_flags_api_v1_messages__message_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MessageFlagUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_outbox_api_v1_outbox_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                active_only?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutboxActionRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_action_api_v1_outbox__action_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutboxMutationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_action_api_v1_outbox__action_id__discard_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutboxMutationResponse"];
                 };
             };
             /** @description Validation Error */

@@ -163,3 +163,39 @@ test("reconcile marks mail deleted on the server", async ({
     timeout: 20_000,
   });
 });
+
+test("starring a message reaches the server", async ({ page, request }) => {
+  await page.goto("/setup");
+  await page.getByPlaceholder("you@example.com").fill("user@example.com");
+  await page.getByRole("combobox").selectOption("custom");
+  await page.getByPlaceholder("imap.example.com").fill("127.0.0.1");
+  await page.getByPlaceholder("993").fill(IMAP_PORT);
+  await page.getByRole("checkbox").uncheck();
+  await page.getByPlaceholder("IMAP 授权码").fill("secret");
+  await page.getByRole("button", { name: "保存账号" }).click();
+  await expect(page.getByText("账号已保存")).toBeVisible();
+
+  await page.getByRole("link", { name: "邮件" }).click();
+  await page.getByRole("button", { name: "刷新文件夹" }).click();
+
+  // UID 2 is untouched by the earlier tests, so its flags are known to start
+  // empty apart from the read flag the reconcile test set.
+  await page.getByRole("button", { name: /E2E Two/ }).click();
+  await page.getByTestId("toggle-star").click();
+
+  // Optimistic: the button flips before the server has been told.
+  await expect(page.getByTestId("toggle-star")).toHaveText("★ 取消星标");
+
+  // Durable: the queued write eventually lands.
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get(
+          `${API_BASE}/__e2e/messages/flags?uid=2&mailbox=INBOX`,
+        );
+        return (await response.json()).flags as string[];
+      },
+      { timeout: 20_000 },
+    )
+    .toContain("\\Flagged");
+});

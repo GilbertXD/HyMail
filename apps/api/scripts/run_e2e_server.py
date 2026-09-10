@@ -117,6 +117,14 @@ async def main() -> None:
         )
         return {"removed": removed}
 
+    @app.get("/__e2e/messages/flags")
+    async def _read_flags(uid: int, mailbox: str = "INBOX") -> dict[str, object]:
+        """Read flags straight off the mock, to prove a write arrived."""
+        for message in mock_server.folders.get(mailbox, []):
+            if message.uid == uid:
+                return {"found": True, "flags": list(message.flags)}
+        return {"found": False, "flags": []}
+
     @app.post("/__e2e/messages/flags")
     async def _set_flags(payload: dict[str, object]) -> dict[str, bool]:
         """Change flags server-side, as another mail client would."""
