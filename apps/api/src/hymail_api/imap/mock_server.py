@@ -3,6 +3,8 @@ import contextlib
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from hymail_api.imap.utf7 import decode_mailbox, encode_mailbox
+
 CRLF = b"\r\n"
 
 
@@ -222,9 +224,11 @@ class MockImapServer:
         args: str,
     ) -> None:
         for name in sorted(self.folders):
+            # Mailboxes live here in decoded form; the wire carries the
+            # modified UTF-7 form, exactly as a real server does.
             await self._write_line(
                 writer,
-                f'* LIST (\\HasNoChildren) "/" "{name}"'.encode(),
+                f'* LIST (\\HasNoChildren) "/" "{encode_mailbox(name)}"'.encode(),
             )
         await self._write_ok(writer, tag, "LIST completed")
 
@@ -352,7 +356,10 @@ class MockImapServer:
 
     @staticmethod
     def _parse_mailbox(args: str) -> str:
-        return args.strip().strip('"')
+        text = args.strip()
+        if len(text) >= 2 and text[0] == '"' and text[-1] == '"':
+            text = text[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+        return decode_mailbox(text)
 
     @staticmethod
     def _parse_uid_args(args: str) -> tuple[str, str]:

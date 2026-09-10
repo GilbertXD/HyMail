@@ -209,3 +209,37 @@ async def test_client_fetches_sparse_uid_ranges(
 
     assert [message.uid for message in messages] == [10, 11, 12]
     await client.close()
+
+
+async def test_client_round_trips_non_ascii_folder_names(
+    server: MockImapServer,
+) -> None:
+    """LIST must decode modified UTF-7 and SELECT must encode it back."""
+    server.add_message(
+        make_raw_message("Chinese mailbox"),
+        mailbox="已删除",
+        uid=1,
+    )
+
+    client = ImapClient(
+        host="127.0.0.1",
+        port=server.port,
+        ssl=False,
+        username="user@example.com",
+        password="secret",
+        timeout=2.0,
+    )
+    await client.connect()
+
+    folders = await client.list_folders()
+    assert [folder.name for folder in folders] == ["INBOX", "Sent", "已删除"]
+
+    selection = await client.select_folder("已删除")
+    assert selection.exists == 1
+
+    messages = [
+        message async for message in client.fetch_messages("已删除", 1)
+    ]
+    assert [message.uid for message in messages] == [1]
+
+    await client.close()

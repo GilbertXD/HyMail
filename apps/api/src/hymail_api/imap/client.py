@@ -17,6 +17,7 @@ from hymail_api.imap.errors import (
     ImapRateLimitError,
 )
 from hymail_api.imap.parser import parse_message
+from hymail_api.imap.utf7 import decode_mailbox, encode_mailbox
 
 _FETCH_START_RE = re.compile(rb"(?:\* )?\d+ FETCH \(")
 _LITERAL_SIZE_RE = re.compile(rb"\{(\d+)\}$")
@@ -294,7 +295,7 @@ class ImapClient:
         delimiter = (
             None if delimiter_text.upper() == "NIL" else _unquote(delimiter_text)
         )
-        name = _unquote(match.group("name").strip())
+        name = decode_mailbox(_unquote(match.group("name").strip()))
         return RemoteFolder(name=name, delimiter=delimiter, flags=flags)
 
     @staticmethod
@@ -378,7 +379,14 @@ class ImapClient:
 
 
 def _quote_mailbox(name: str) -> str:
-    escaped = name.replace("\\", "\\\\").replace('"', '\\"')
+    """Encode a mailbox name and quote it for the IMAP wire.
+
+    Names are held locally in their decoded form, so they must be shifted back
+    to modified UTF-7 before the server ever sees them.
+    """
+    escaped = (
+        encode_mailbox(name).replace("\\", "\\\\").replace('"', '\\"')
+    )
     return f'"{escaped}"'
 
 
