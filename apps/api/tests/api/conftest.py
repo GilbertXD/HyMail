@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
+from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -13,6 +14,7 @@ from hymail_api.db.session import create_engine
 from hymail_api.imap.client import ImapClient
 from hymail_api.imap.mock_server import MockImapScenario, MockImapServer
 from hymail_api.main import create_app
+from hymail_api.services.sync_scheduler import SyncScheduler
 
 
 @pytest_asyncio.fixture
@@ -57,8 +59,8 @@ def fake_dpapi(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(accounts, "unprotect_secret", fake_unprotect)
 
 
-@pytest.fixture
-def app(session_factory, mock_server):
+@pytest_asyncio.fixture
+async def app(session_factory, mock_server) -> AsyncIterator[FastAPI]:
     def client_factory(_account) -> ImapClient:
         return ImapClient(
             host="127.0.0.1",
@@ -69,10 +71,22 @@ def app(session_factory, mock_server):
             timeout=1.0,
         )
 
-    return create_app(
+    application = create_app(
         session_factory=session_factory,
         imap_client_factory=client_factory,
+        # Keeps queue tests fast without changing the shipped defaults.
+        scheduler=SyncScheduler(
+            session_factory=session_factory,
+            client_factory=client_factory,
+            backoff_base_seconds=0.0,
+            max_backoff_seconds=0.0,
+            poll_interval=0.01,
+        ),
     )
+    yield application
+    # ASGITransport does not run lifespan, so the workers have to be stopped
+    # explicitly or they outlive the test.
+    await application.state.sync_scheduler.stop()
 
 
 @pytest_asyncio.fixture

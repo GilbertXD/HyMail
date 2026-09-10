@@ -1,4 +1,5 @@
 from collections.abc import Callable, Sequence
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,7 +16,7 @@ from hymail_api.db.models.account import Account
 from hymail_api.db.session import SessionLocal
 from hymail_api.imap.client import ImapClient
 from hymail_api.services.accounts import build_imap_client
-from hymail_api.services.sync_manager import SyncManager
+from hymail_api.services.sync_scheduler import SyncScheduler
 
 
 def create_app(
@@ -24,15 +25,31 @@ def create_app(
     imap_client_factory: Callable[[Account], ImapClient] = build_imap_client,
     api_token: str | None = None,
     allowed_origins: Sequence[str] | None = None,
+    scheduler: SyncScheduler | None = None,
 ) -> FastAPI:
     effective_token = settings.api_token if api_token is None else api_token
     origins = list(allowed_origins or DEFAULT_ALLOWED_ORIGINS)
+
+    sync_scheduler = scheduler or SyncScheduler(
+        session_factory=session_factory,
+        client_factory=imap_client_factory,
+    )
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        # Re-queues whatever a previous process left running before serving.
+        await sync_scheduler.ensure_started()
+        try:
+            yield
+        finally:
+            await sync_scheduler.stop()
 
     application = FastAPI(
         title=settings.app_name,
         version=settings.version,
         docs_url="/docs",
         redoc_url=None,
+        lifespan=lifespan,
     )
     # Middleware added last runs first. The error handler must sit *inside*
     # CORSMiddleware so its 500 response still gets CORS headers.
@@ -50,10 +67,7 @@ def create_app(
         allowed_origins=origins,
     )
     application.state.session_factory = session_factory
-    application.state.sync_manager = SyncManager(
-        session_factory=session_factory,
-        client_factory=imap_client_factory,
-    )
+    application.state.sync_scheduler = sync_scheduler
     application.include_router(api_router)
 
     @application.get("/health", tags=["system"])

@@ -37,6 +37,10 @@ async def test_trigger_sync_and_query_results(
     create_response = await client.post("/api/v1/accounts", json=account_payload)
     assert create_response.status_code == 201
 
+    # The queue is keyed by folder id, so folders have to be discovered first.
+    refresh_response = await client.post("/api/v1/folders/refresh")
+    assert refresh_response.status_code == 200
+
     mock_server.add_message(make_raw_message("One"), uid=1)
 
     trigger_response = await client.post(
@@ -77,7 +81,23 @@ async def test_trigger_sync_and_query_results(
     assert "sync.completed" in event_types
 
 
-async def test_cancel_without_running_sync_returns_false(
+async def test_trigger_unknown_folder_returns_404(
+    client: AsyncClient,
+    account_payload: dict[str, object],
+) -> None:
+    create_response = await client.post("/api/v1/accounts", json=account_payload)
+    assert create_response.status_code == 201
+
+    response = await client.post(
+        "/api/v1/sync/trigger",
+        json={"folder": "Nowhere"},
+    )
+
+    assert response.status_code == 404
+    assert "Nowhere" in response.json()["detail"]
+
+
+async def test_cancel_without_running_sync_cancels_nothing(
     client: AsyncClient,
     account_payload: dict[str, object],
 ) -> None:
@@ -89,4 +109,4 @@ async def test_cancel_without_running_sync_returns_false(
         json={"folder": "INBOX"},
     )
     assert response.status_code == 200
-    assert response.json() == {"cancelled": False}
+    assert response.json() == {"cancelled": 0}

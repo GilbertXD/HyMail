@@ -8,12 +8,56 @@ class SyncTriggerRequest(BaseModel):
     folder: str = "INBOX"
 
 
+class SyncTriggerAllRequest(BaseModel):
+    """An empty body syncs every folder that still exists on the server."""
+
+    folder_names: list[str] | None = None
+
+
 class SyncCancelRequest(BaseModel):
-    folder: str = "INBOX"
+    folder: str | None = None
+    batch_id: UUID | None = None
 
 
 class SyncCancelResponse(BaseModel):
-    cancelled: bool
+    cancelled: int
+
+
+class SyncTriggerResponse(BaseModel):
+    batch_id: UUID
+    job_ids: list[UUID]
+    queued: int
+    skipped: int = 0
+
+
+class SyncBatchRead(BaseModel):
+    batch_id: UUID
+    total: int
+    queued: int
+    running: int
+    success: int
+    failed: int
+    cancelled: int
+    state: str
+    current_folder: str | None
+    last_error: str | None
+
+
+class SyncJobRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    folder_id: UUID
+    folder_name: str
+    batch_id: UUID
+    state: str
+    priority: int
+    attempts: int
+    last_error: str | None
+    not_before: datetime | None
+    started_at: datetime | None
+    finished_at: datetime | None
+    created_at: datetime
 
 
 class SyncStatusRead(BaseModel):
