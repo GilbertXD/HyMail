@@ -102,3 +102,40 @@ async def get_account_status(
         return await session.scalar(
             select(Account.status).where(Account.id == account_id)
         )
+
+
+async def get_missing_flags(
+    session_factory: async_sessionmaker[AsyncSession],
+    account_id: UUID,
+    folder_name: str,
+) -> list[tuple[int, bool]]:
+    """(uid, remote_missing) for every local message, ordered by uid."""
+    async with session_factory() as session:
+        rows = (
+            await session.execute(
+                select(Message.uid, Message.remote_missing)
+                .join(Folder, Folder.id == Message.folder_id)
+                .where(
+                    Message.account_id == account_id,
+                    Folder.name == folder_name,
+                )
+                .order_by(Message.uid)
+            )
+        ).all()
+        return [(uid, bool(missing)) for uid, missing in rows]
+
+
+async def get_last_reconcile_at(
+    session_factory: async_sessionmaker[AsyncSession],
+    account_id: UUID,
+    folder_name: str,
+):
+    async with session_factory() as session:
+        return await session.scalar(
+            select(SyncCursor.last_reconcile_at)
+            .join(Folder, Folder.id == SyncCursor.folder_id)
+            .where(
+                SyncCursor.account_id == account_id,
+                Folder.name == folder_name,
+            )
+        )

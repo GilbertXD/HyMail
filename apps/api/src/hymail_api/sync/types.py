@@ -17,3 +17,21 @@ class SyncResult:
     attempts: int
     trace_id: str
     duration_ms: int = 0
+
+
+@dataclass(slots=True)
+class ReconcileResult:
+    """Outcome of comparing a folder against the server's UID set."""
+
+    account_id: UUID
+    folder_id: UUID
+    folder_name: str
+    synced_count: int
+    newly_missing: int
+    restored: int
+    remote_total: int
+    local_total: int
+    trace_id: str
+    uidvalidity: int | None
+    skipped_mass_flagging: bool = False
+    duration_ms: int = 0

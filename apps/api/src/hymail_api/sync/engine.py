@@ -25,15 +25,18 @@ from hymail_api.imap.errors import (
 )
 from hymail_api.sync.backoff import calculate_backoff_delay
 from hymail_api.sync.store import (
+    apply_reconcile,
     count_messages,
     delete_messages_for_folder,
     get_or_create_cursor,
     get_or_create_folder,
+    list_message_uids,
+    list_remote_missing_uids,
     update_folder_remote_state,
     upsert_messages,
     write_event,
 )
-from hymail_api.sync.types import SyncResult
+from hymail_api.sync.types import ReconcileResult, SyncResult
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +50,14 @@ class _PreparedSync:
     end_uid: int | None
     uidvalidity: int
     uidnext: int | None
+
+
+@dataclass(slots=True)
+class _ReconcileOutcome:
+    newly_missing: int
+    restored: int
+    local_total: int
+    skipped: bool
 
 
 class SyncEngine:
@@ -161,6 +172,154 @@ class SyncEngine:
         if last_error is not None:
             raise last_error
         raise ImapError("sync failed without a recoverable error")
+
+    async def reconcile_folder(
+        self,
+        account_id: UUID,
+        folder_name: str,
+        *,
+        client: ImapClient | None = None,
+    ) -> ReconcileResult:
+        """Bring a folder in line with the server, then notice deletions.
+
+        Phase one is an ordinary sync, so new mail is appended and a
+        UIDVALIDITY change goes down the existing RESYNC path. Phase two
+        compares the server's UID set against the local one to flag the
+        messages that are no longer there.
+        """
+        trace_id = str(uuid4())
+        started_at = time.monotonic()
+
+        sync_result = await self.sync_folder(
+            account_id,
+            folder_name,
+            client=client,
+        )
+
+        owned = client is None
+        active = client if client is not None else self._imap_client_factory()
+        try:
+            if owned:
+                await active.connect()
+            remote_uids = set(await active.list_uids(folder_name))
+        finally:
+            if owned:
+                await active.close()
+
+        await self._set_cursor_state(
+            account_id,
+            sync_result.folder_id,
+            SyncState.RECONCILE,
+        )
+        outcome = await self._apply_reconcile(
+            account_id,
+            sync_result.folder_id,
+            remote_uids,
+            trace_id,
+        )
+        await self._set_cursor_state(
+            account_id,
+            sync_result.folder_id,
+            SyncState.IDLE,
+        )
+
+        return ReconcileResult(
+            account_id=account_id,
+            folder_id=sync_result.folder_id,
+            folder_name=folder_name,
+            synced_count=sync_result.fetched_count,
+            newly_missing=outcome.newly_missing,
+            restored=outcome.restored,
+            remote_total=len(remote_uids),
+            local_total=outcome.local_total,
+            trace_id=trace_id,
+            uidvalidity=sync_result.uidvalidity,
+            skipped_mass_flagging=outcome.skipped,
+            duration_ms=int((time.monotonic() - started_at) * 1000),
+        )
+
+    async def _apply_reconcile(
+        self,
+        account_id: UUID,
+        folder_id: UUID,
+        remote_uids: set[int],
+        trace_id: str,
+    ) -> _ReconcileOutcome:
+        now = datetime.now(UTC)
+        async with self._session_factory() as session, session.begin():
+            local_uids = await list_message_uids(session, folder_id)
+            already_flagged = await list_remote_missing_uids(session, folder_id)
+
+            missing = local_uids - remote_uids
+            restored = (local_uids & remote_uids) & already_flagged
+
+            # An empty remote set for a folder that is full locally is far
+            # more likely to be a bad answer than a user emptying the mailbox,
+            # and flagging every row would look like data loss.
+            skipped = bool(local_uids) and not remote_uids
+            if skipped:
+                logger.warning(
+                    "reconcile skipped folder_id=%s: server returned no UIDs "
+                    "for %s local messages",
+                    folder_id,
+                    len(local_uids),
+                )
+                missing, restored = set(), set()
+
+            await apply_reconcile(
+                session,
+                folder_id,
+                missing=missing,
+                restored=restored,
+            )
+
+            cursor = await session.scalar(
+                select(SyncCursor).where(
+                    SyncCursor.account_id == account_id,
+                    SyncCursor.folder_id == folder_id,
+                )
+            )
+            if cursor is not None:
+                cursor.last_reconcile_at = now
+                cursor.state = SyncState.IDLE.value
+
+            await write_event(
+                session,
+                trace_id=trace_id,
+                account_id=account_id,
+                folder_id=folder_id,
+                state=SyncState.RECONCILE.value,
+                event_type="sync.reconcile",
+                message=(
+                    f"remote={len(remote_uids)} local={len(local_uids)} "
+                    f"missing={len(missing)} restored={len(restored)}"
+                    + (" skipped=empty-remote" if skipped else "")
+                ),
+                fetched_count=len(missing),
+            )
+
+        return _ReconcileOutcome(
+            newly_missing=len(missing - already_flagged),
+            restored=len(restored),
+            local_total=len(local_uids),
+            skipped=skipped,
+        )
+
+    async def _set_cursor_state(
+        self,
+        account_id: UUID,
+        folder_id: UUID,
+        state: SyncState,
+    ) -> None:
+        async with self._session_factory() as session, session.begin():
+            cursor = await session.scalar(
+                select(SyncCursor).where(
+                    SyncCursor.account_id == account_id,
+                    SyncCursor.folder_id == folder_id,
+                )
+            )
+            if cursor is not None:
+                cursor.state = state.value
 
     async def _sync_once(
         self,

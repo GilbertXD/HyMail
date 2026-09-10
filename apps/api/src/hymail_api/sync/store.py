@@ -1,7 +1,8 @@
+from collections.abc import Iterable, Iterator
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -241,3 +242,76 @@ def _extract_headers(raw_message: bytes) -> str | None:
         if found:
             return head.decode("utf-8", errors="replace")
     return raw_message.decode("utf-8", errors="replace")
+
+
+_RECONCILE_CHUNK = 400
+
+
+async def list_message_uids(
+    session: AsyncSession,
+    folder_id: UUID,
+) -> set[int]:
+    uids = await session.scalars(
+        select(Message.uid).where(Message.folder_id == folder_id)
+    )
+    return set(uids)
+
+
+async def list_remote_missing_uids(
+    session: AsyncSession,
+    folder_id: UUID,
+) -> set[int]:
+    uids = await session.scalars(
+        select(Message.uid).where(
+            Message.folder_id == folder_id,
+            Message.remote_missing.is_(True),
+        )
+    )
+    return set(uids)
+
+
+async def apply_reconcile(
+    session: AsyncSession,
+    folder_id: UUID,
+    *,
+    missing: set[int],
+    restored: set[int],
+) -> None:
+    """Record which UIDs are no longer on the server, and which came back.
+
+    Only rows that actually change are touched: clearing the flag on every
+    present message would rewrite the whole folder on each reconcile.
+    """
+    now = datetime.now(UTC)
+
+    for chunk in _chunked(missing, _RECONCILE_CHUNK):
+        await session.execute(
+            update(Message)
+            .where(
+                Message.folder_id == folder_id,
+                Message.uid.in_(chunk),
+            )
+            .values(remote_missing=True, remote_missing_at=now)
+        )
+
+    for chunk in _chunked(restored, _RECONCILE_CHUNK):
+        await session.execute(
+            update(Message)
+            .where(
+                Message.folder_id == folder_id,
+                Message.uid.in_(chunk),
+                Message.remote_missing.is_(True),
+            )
+            .values(remote_missing=False, remote_missing_at=None)
+        )
+
+
+def _chunked(values: Iterable[int], size: int) -> Iterator[list[int]]:
+    chunk: list[int] = []
+    for value in values:
+        chunk.append(value)
+        if len(chunk) >= size:
+            yield chunk
+            chunk = []
+    if chunk:
+        yield chunk
