@@ -33,6 +33,7 @@ from hymail_api.db.models.sync import SyncJob
 from hymail_api.domain.enums import (
     AccountStatus,
     SyncBatchState,
+    SyncJobKind,
     SyncJobState,
     SyncPriority,
 )
@@ -63,6 +64,7 @@ class ClaimedJob:
     folder_name: str
     batch_id: UUID
     attempts: int
+    kind: str = SyncJobKind.SYNC.value
 
 
 @dataclass(slots=True)
@@ -194,6 +196,7 @@ class SyncScheduler:
         *,
         priority: SyncPriority = SyncPriority.USER,
         batch_id: UUID | None = None,
+        kind: SyncJobKind = SyncJobKind.SYNC,
     ) -> SyncJob:
         """Queue one folder, or hand back the job already in flight for it."""
         jobs = await self.enqueue_folders(
@@ -201,6 +204,7 @@ class SyncScheduler:
             [folder_id],
             priority=priority,
             batch_id=batch_id,
+            kind=kind,
         )
         if jobs:
             return jobs[0]
@@ -217,8 +221,14 @@ class SyncScheduler:
         *,
         priority: SyncPriority = SyncPriority.USER,
         batch_id: UUID | None = None,
+        kind: SyncJobKind = SyncJobKind.SYNC,
     ) -> list[SyncJob]:
-        """Queue folders, skipping any that already have work in flight."""
+        """Queue folders, skipping any that already have work in flight.
+
+        A folder that is already queued or running is skipped regardless of
+        kind: syncing and reconciling the same mailbox at once would only
+        duplicate work.
+        """
         if not folder_ids:
             return []
 
@@ -243,6 +253,7 @@ class SyncScheduler:
                     account_id=account_id,
                     folder_id=folder_id,
                     batch_id=batch,
+                    kind=kind.value,
                     state=SyncJobState.QUEUED.value,
                     priority=int(priority),
                     not_before=now,
@@ -509,11 +520,18 @@ class SyncScheduler:
             imap_client_factory=lambda: client,
             batch_size=self._batch_size,
         )
-        await engine.sync_folder(
-            claimed.account_id,
-            claimed.folder_name,
-            client=client,
-        )
+        if claimed.kind == SyncJobKind.RECONCILE.value:
+            await engine.reconcile_folder(
+                claimed.account_id,
+                claimed.folder_name,
+                client=client,
+            )
+        else:
+            await engine.sync_folder(
+                claimed.account_id,
+                claimed.folder_name,
+                client=client,
+            )
         await self._finish(claimed, SyncJobState.SUCCESS, None)
 
     async def _claim_next(self) -> ClaimedJob | None:
@@ -574,6 +592,7 @@ class SyncScheduler:
                 folder_name=folder_name,
                 batch_id=candidate.batch_id,
                 attempts=candidate.attempts + 1,
+                kind=candidate.kind,
             )
 
     async def _finish(

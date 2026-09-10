@@ -49,6 +49,7 @@ async def list_all_messages(
             flags=message.flags_json,
             folder_name=folder_name,
             account_email=email,
+            remote_missing=message.remote_missing,
         )
         for message, folder_name, email in rows
     ]
@@ -87,4 +88,5 @@ async def get_message(
         raw_headers=message.raw_headers,
         body_text=message.body_text,
         body_html=message.body_html,
+        remote_missing=message.remote_missing,
     )

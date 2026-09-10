@@ -9,6 +9,7 @@ from hymail_api.api.deps import SchedulerDep, SessionDep
 from hymail_api.db.models.account import Account
 from hymail_api.db.models.folder import Folder
 from hymail_api.db.models.sync import SyncCursor, SyncEvent, SyncJob
+from hymail_api.domain.enums import SyncJobKind, SyncPriority
 from hymail_api.imap.errors import ImapError
 from hymail_api.schemas.sync import (
     SyncBatchRead,
@@ -63,34 +64,17 @@ async def trigger_all_sync(
     the server would answer every one of them with "mailbox not found".
     """
     account = await _require_account(session)
-
-    folders = list(
-        await session.scalars(
-            select(Folder)
-            .where(Folder.account_id == account.id)
-            .order_by(Folder.name)
-        )
+    targets, skipped = await _select_targets(
+        session,
+        account,
+        payload.folder_names,
     )
-    if not folders:
-        raise HTTPException(
-            status_code=400,
-            detail="no folders known locally; refresh folders first",
-        )
-
-    remote_names = await _remote_folder_names(account)
-    targets = [
-        folder
-        for folder in folders
-        if not payload.folder_names or folder.name in payload.folder_names
-    ]
-    queued_targets = [f.id for f in targets if f.name in remote_names]
-    skipped = len(targets) - len(queued_targets)
 
     batch_id = uuid4()
     try:
         jobs = await scheduler.enqueue_folders(
             account.id,
-            queued_targets,
+            [folder.id for folder in targets],
             batch_id=batch_id,
         )
     except AccountPausedError as exc:
@@ -100,7 +84,45 @@ async def trigger_all_sync(
         batch_id=batch_id,
         job_ids=[job.id for job in jobs],
         queued=len(jobs),
-        skipped=skipped,
+        skipped=skipped + (len(targets) - len(jobs)),
+    )
+
+
+@router.post("/reconcile", response_model=SyncTriggerResponse, status_code=202)
+async def trigger_reconcile(
+    payload: SyncTriggerAllRequest,
+    session: SessionDep,
+    scheduler: SchedulerDep,
+) -> SyncTriggerResponse:
+    """Queue a reconcile pass.
+
+    Each job pulls new mail first and then compares the server UID set against
+    the local one, flagging messages that are no longer there.
+    """
+    account = await _require_account(session)
+    targets, skipped = await _select_targets(
+        session,
+        account,
+        payload.folder_names,
+    )
+
+    batch_id = uuid4()
+    try:
+        jobs = await scheduler.enqueue_folders(
+            account.id,
+            [folder.id for folder in targets],
+            batch_id=batch_id,
+            kind=SyncJobKind.RECONCILE,
+            priority=SyncPriority.RECONCILE,
+        )
+    except AccountPausedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return SyncTriggerResponse(
+        batch_id=batch_id,
+        job_ids=[job.id for job in jobs],
+        queued=len(jobs),
+        skipped=skipped + (len(targets) - len(jobs)),
     )
 
 
@@ -162,6 +184,7 @@ async def list_sync_jobs(
             folder_id=job.folder_id,
             folder_name=folder_name,
             batch_id=job.batch_id,
+            kind=job.kind,
             state=job.state,
             priority=job.priority,
             attempts=job.attempts,
@@ -236,6 +259,35 @@ async def _require_folder(
             detail=f"folder not found: {folder_name}",
         )
     return folder
+
+
+async def _select_targets(
+    session: AsyncSession,
+    account: Account,
+    folder_names: list[str] | None,
+) -> tuple[list[Folder], int]:
+    """Local folders that still exist on the server, plus how many were dropped."""
+    folders = list(
+        await session.scalars(
+            select(Folder)
+            .where(Folder.account_id == account.id)
+            .order_by(Folder.name)
+        )
+    )
+    if not folders:
+        raise HTTPException(
+            status_code=400,
+            detail="no folders known locally; refresh folders first",
+        )
+
+    wanted = [
+        folder
+        for folder in folders
+        if not folder_names or folder.name in folder_names
+    ]
+    remote_names = await _remote_folder_names(account)
+    targets = [folder for folder in wanted if folder.name in remote_names]
+    return targets, len(wanted) - len(targets)
 
 
 async def _remote_folder_names(account: Account) -> set[str]:

@@ -50,6 +50,7 @@ class SyncJobRead(BaseModel):
     folder_id: UUID
     folder_name: str
     batch_id: UUID
+    kind: str
     state: str
     priority: int
     attempts: int

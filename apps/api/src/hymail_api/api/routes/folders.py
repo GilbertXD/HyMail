@@ -110,6 +110,7 @@ async def list_messages(
             flags=message.flags_json,
             folder_name=folder.name,
             account_email=account.email,
+            remote_missing=message.remote_missing,
         )
         for message in result
     ]

@@ -17,13 +17,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from hymail_api.db.models.sync import SyncJob
-from hymail_api.domain.enums import SyncJobState, SyncPriority
+from hymail_api.domain.enums import SyncJobKind, SyncJobState, SyncPriority
 from hymail_api.imap.client import ImapClient
 from hymail_api.imap.dto import FetchedMessage, FolderSelection, RemoteFolder
 from hymail_api.imap.mock_server import MockImapServer
 from hymail_api.services.sync_scheduler import SyncScheduler
 from hymail_api.sync.store import get_or_create_folder
-from tests.sync.helpers import count_messages
+from tests.sync.helpers import count_messages, get_missing_flags
 
 
 @dataclass
@@ -394,6 +394,46 @@ async def test_cancelling_a_batch_cancels_its_queued_jobs(
     assert summary is not None
     assert summary.cancelled == 3
     assert summary.state.value == "cancelled"
+
+
+async def test_reconcile_job_runs_the_reconcile_path(
+    session_factory: async_sessionmaker[AsyncSession],
+    account_id: UUID,
+    mock_server: MockImapServer,
+    imap_client_factory: Callable[[], ImapClient],
+    message_factory: Callable[[str, str], bytes],
+    scheduler_factory: list[SyncScheduler],
+) -> None:
+    """A job's kind selects sync or reconcile, not just which folder."""
+    for uid, subject in enumerate(["One", "Two"], start=1):
+        mock_server.add_message(message_factory(subject), uid=uid)
+    folder_id = await _create_folder(session_factory, account_id, "INBOX")
+
+    scheduler = build_scheduler(
+        session_factory,
+        lambda _account: imap_client_factory(),
+    )
+    scheduler_factory.append(scheduler)
+
+    await scheduler.enqueue_folder(account_id, folder_id)
+    await scheduler.drain()
+
+    mock_server.remove_message(1)
+
+    job = await scheduler.enqueue_folder(
+        account_id,
+        folder_id,
+        kind=SyncJobKind.RECONCILE,
+    )
+    await scheduler.drain()
+
+    assert await _job_state(session_factory, job.id) == (
+        SyncJobState.SUCCESS.value
+    )
+    assert await get_missing_flags(session_factory, account_id, "INBOX") == [
+        (1, True),
+        (2, False),
+    ]
 
 
 async def test_cancelling_a_running_job_stops_it(

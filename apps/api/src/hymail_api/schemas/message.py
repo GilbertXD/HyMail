@@ -16,6 +16,8 @@ class MessageSummary(BaseModel):
     flags: list[str]
     folder_name: str | None = None
     account_email: str | None = None
+    # Set by reconciliation when the UID is gone from the server.
+    remote_missing: bool = False
 
 
 class MessageDetail(MessageSummary):

@@ -104,3 +104,45 @@ async def test_trigger_all_skips_folders_the_server_does_not_have(
     summary = await _wait_for_batch(client, body["batch_id"])
     assert summary["total"] == 2
     assert summary["failed"] == 0
+
+
+async def test_reconcile_flags_messages_deleted_on_the_server(
+    client: AsyncClient,
+    account_payload: dict[str, object],
+    mock_server,
+) -> None:
+    create_response = await client.post("/api/v1/accounts", json=account_payload)
+    assert create_response.status_code == 201
+
+    mock_server.add_message(_message("One"), mailbox="INBOX", uid=1)
+    mock_server.add_message(_message("Two"), mailbox="INBOX", uid=2)
+
+    refresh_response = await client.post("/api/v1/folders/refresh")
+    assert refresh_response.status_code == 200
+
+    first = await client.post("/api/v1/sync/trigger-all", json={})
+    await _wait_for_batch(client, first.json()["batch_id"])
+
+    mock_server.remove_message(1)
+
+    reconcile = await client.post(
+        "/api/v1/sync/reconcile",
+        json={"folder_names": ["INBOX"]},
+    )
+    assert reconcile.status_code == 202
+    assert reconcile.json()["queued"] == 1
+
+    summary = await _wait_for_batch(client, reconcile.json()["batch_id"])
+    assert summary["state"] == "completed"
+    assert summary["success"] == 1
+
+    messages = (await client.get("/api/v1/messages")).json()
+    by_uid = {message["uid"]: message for message in messages}
+    assert by_uid[1]["remote_missing"] is True
+    assert by_uid[2]["remote_missing"] is False
+
+    # The message is flagged rather than dropped, so the change is visible.
+    assert len(messages) == 2
+
+    events = (await client.get("/api/v1/sync/events")).json()
+    assert any(event["event_type"] == "sync.reconcile" for event in events)
