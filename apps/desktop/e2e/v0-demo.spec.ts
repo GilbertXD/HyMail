@@ -120,6 +120,12 @@ test("sync all folders in one click", async ({ page }) => {
   await expect(rows.filter({ hasText: "Sent" }).first()).toContainText(
     "已完成",
   );
+
+  // The same pane reports what those runs actually did.
+  await expect(page.getByText("同步指标")).toBeVisible();
+  await expect(page.getByTestId("metrics-runs")).not.toHaveText("0");
+  await expect(page.getByTestId("metrics-fetched")).not.toHaveText("0");
+  await expect(page.getByTestId("metrics-folder-row").first()).toBeVisible();
 });
 
 test("reconcile marks mail deleted on the server", async ({

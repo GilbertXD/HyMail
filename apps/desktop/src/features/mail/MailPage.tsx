@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
 import { ErrorState, LoadingState } from "../../components/AsyncState";
+import { MetricsPanel } from "../sync/MetricsPanel";
 import { OutboxPanel } from "../sync/OutboxPanel";
 import { SyncEventTimeline } from "../sync/SyncEventTimeline";
 import { SyncJobQueue } from "../sync/SyncJobQueue";
@@ -636,6 +637,7 @@ export function MailPage() {
               ) : null}
               <SyncJobQueue jobs={jobsQuery.data ?? []} />
               <OutboxPanel enabled={showSyncDetail} />
+              <MetricsPanel enabled={showSyncDetail} />
             </>
           ) : (
             <>

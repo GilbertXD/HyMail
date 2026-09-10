@@ -147,6 +147,26 @@ export interface paths {
         patch: operations["update_message_flags_api_v1_messages__message_id__patch"];
         trace?: never;
     };
+    "/api/v1/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Metrics
+         * @description Sync and outbox health over a rolling window.
+         */
+        get: operations["read_metrics_api_v1_metrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/outbox": {
         parameters: {
             query?: never;
@@ -470,6 +490,32 @@ export interface components {
             /** Message */
             message: string;
         };
+        /** FolderMetricsRead */
+        FolderMetricsRead: {
+            /**
+             * Folder Id
+             * Format: uuid
+             */
+            folder_id: string;
+            /** Folder Name */
+            folder_name: string;
+            /** Runs */
+            runs: number;
+            /** Failures */
+            failures: number;
+            /** Retries */
+            retries: number;
+            /** Fetched */
+            fetched: number;
+            /** Avg Duration Ms */
+            avg_duration_ms: number | null;
+            /** P95 Duration Ms */
+            p95_duration_ms: number | null;
+            /** Last Sync At */
+            last_sync_at: string | null;
+            /** Last Error */
+            last_error: string | null;
+        };
         /** FolderRead */
         FolderRead: {
             /**
@@ -622,6 +668,33 @@ export interface components {
             /** Outbox State */
             outbox_state?: string | null;
         };
+        /** MetricsRead */
+        MetricsRead: {
+            /** Window Hours */
+            window_hours: number;
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /** Runs */
+            runs: number;
+            /** Failures */
+            failures: number;
+            /** Failure Rate */
+            failure_rate: number;
+            /** Retries */
+            retries: number;
+            /** Fetched */
+            fetched: number;
+            /** Avg Duration Ms */
+            avg_duration_ms: number | null;
+            /** P95 Duration Ms */
+            p95_duration_ms: number | null;
+            /** Folders */
+            folders: components["schemas"]["FolderMetricsRead"][];
+            outbox: components["schemas"]["OutboxMetricsRead"];
+        };
         /** OutboxActionRead */
         OutboxActionRead: {
             /**
@@ -662,6 +735,21 @@ export interface components {
             created_at: string;
             /** Subject */
             subject: string | null;
+        };
+        /** OutboxMetricsRead */
+        OutboxMetricsRead: {
+            /** Pending */
+            pending: number;
+            /** Inflight */
+            inflight: number;
+            /** Success */
+            success: number;
+            /** Failed */
+            failed: number;
+            /** Abandoned */
+            abandoned: number;
+            /** Outstanding */
+            outstanding: number;
         };
         /** OutboxMutationResponse */
         OutboxMutationResponse: {
@@ -1105,6 +1193,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MessageDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_metrics_api_v1_metrics_get: {
+        parameters: {
+            query?: {
+                window_hours?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetricsRead"];
                 };
             };
             /** @description Validation Error */

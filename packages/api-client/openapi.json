@@ -383,6 +383,52 @@
         }
       }
     },
+    "/api/v1/metrics": {
+      "get": {
+        "tags": [
+          "metrics"
+        ],
+        "summary": "Read Metrics",
+        "description": "Sync and outbox health over a rolling window.",
+        "operationId": "read_metrics_api_v1_metrics_get",
+        "parameters": [
+          {
+            "name": "window_hours",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 720,
+              "minimum": 1,
+              "default": 24,
+              "title": "Window Hours"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/outbox": {
       "get": {
         "tags": [
@@ -1199,6 +1245,94 @@
         ],
         "title": "ConnectionTestResponse"
       },
+      "FolderMetricsRead": {
+        "properties": {
+          "folder_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Folder Id"
+          },
+          "folder_name": {
+            "type": "string",
+            "title": "Folder Name"
+          },
+          "runs": {
+            "type": "integer",
+            "title": "Runs"
+          },
+          "failures": {
+            "type": "integer",
+            "title": "Failures"
+          },
+          "retries": {
+            "type": "integer",
+            "title": "Retries"
+          },
+          "fetched": {
+            "type": "integer",
+            "title": "Fetched"
+          },
+          "avg_duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Duration Ms"
+          },
+          "p95_duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P95 Duration Ms"
+          },
+          "last_sync_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Sync At"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "folder_id",
+          "folder_name",
+          "runs",
+          "failures",
+          "retries",
+          "fetched",
+          "avg_duration_ms",
+          "p95_duration_ms",
+          "last_sync_at",
+          "last_error"
+        ],
+        "title": "FolderMetricsRead"
+      },
       "FolderRead": {
         "properties": {
           "id": {
@@ -1678,6 +1812,86 @@
         ],
         "title": "MessageSummary"
       },
+      "MetricsRead": {
+        "properties": {
+          "window_hours": {
+            "type": "integer",
+            "title": "Window Hours"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          },
+          "runs": {
+            "type": "integer",
+            "title": "Runs"
+          },
+          "failures": {
+            "type": "integer",
+            "title": "Failures"
+          },
+          "failure_rate": {
+            "type": "number",
+            "title": "Failure Rate"
+          },
+          "retries": {
+            "type": "integer",
+            "title": "Retries"
+          },
+          "fetched": {
+            "type": "integer",
+            "title": "Fetched"
+          },
+          "avg_duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Duration Ms"
+          },
+          "p95_duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P95 Duration Ms"
+          },
+          "folders": {
+            "items": {
+              "$ref": "#/components/schemas/FolderMetricsRead"
+            },
+            "type": "array",
+            "title": "Folders"
+          },
+          "outbox": {
+            "$ref": "#/components/schemas/OutboxMetricsRead"
+          }
+        },
+        "type": "object",
+        "required": [
+          "window_hours",
+          "generated_at",
+          "runs",
+          "failures",
+          "failure_rate",
+          "retries",
+          "fetched",
+          "avg_duration_ms",
+          "p95_duration_ms",
+          "folders",
+          "outbox"
+        ],
+        "title": "MetricsRead"
+      },
       "OutboxActionRead": {
         "properties": {
           "id": {
@@ -1776,6 +1990,44 @@
           "subject"
         ],
         "title": "OutboxActionRead"
+      },
+      "OutboxMetricsRead": {
+        "properties": {
+          "pending": {
+            "type": "integer",
+            "title": "Pending"
+          },
+          "inflight": {
+            "type": "integer",
+            "title": "Inflight"
+          },
+          "success": {
+            "type": "integer",
+            "title": "Success"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "abandoned": {
+            "type": "integer",
+            "title": "Abandoned"
+          },
+          "outstanding": {
+            "type": "integer",
+            "title": "Outstanding"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pending",
+          "inflight",
+          "success",
+          "failed",
+          "abandoned",
+          "outstanding"
+        ],
+        "title": "OutboxMetricsRead"
       },
       "OutboxMutationResponse": {
         "properties": {

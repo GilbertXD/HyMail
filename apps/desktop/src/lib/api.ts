@@ -28,6 +28,7 @@ export type SyncBatchRead = components["schemas"]["SyncBatchRead"];
 export type SyncJobRead = components["schemas"]["SyncJobRead"];
 export type OutboxActionRead = components["schemas"]["OutboxActionRead"];
 export type MessageFlagUpdate = components["schemas"]["MessageFlagUpdate"];
+export type MetricsRead = components["schemas"]["MetricsRead"];
 
 export class ApiError extends Error {
   status: number;
@@ -225,6 +226,14 @@ export async function listSyncEvents(
   return unwrap(
     await apiClient.GET("/api/v1/sync/events", {
       params: { query: { after_id: afterId, limit: 200 } },
+    }),
+  );
+}
+
+export async function getMetrics(windowHours = 24): Promise<MetricsRead> {
+  return unwrap(
+    await apiClient.GET("/api/v1/metrics", {
+      params: { query: { window_hours: windowHours } },
     }),
   );
 }

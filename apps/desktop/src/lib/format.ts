@@ -36,3 +36,18 @@ export function estimateRetrySeconds(attempts: number): number {
   const exponent = Math.max(attempts - 1, 0);
   return Math.min(2 ** exponent, 300);
 }
+
+/** Durations are measured in milliseconds but read better in seconds. */
+export function formatDuration(value?: number | null): string {
+  if (value == null) {
+    return "—";
+  }
+  if (value < 1000) {
+    return `${value}ms`;
+  }
+  return `${(value / 1000).toFixed(1)}s`;
+}
+
+export function formatPercent(fraction: number): string {
+  return `${Math.round(fraction * 100)}%`;
+}
