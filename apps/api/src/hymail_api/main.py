@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from hymail_api.api.errors import UnhandledErrorMiddleware
 from hymail_api.api.router import api_router
 from hymail_api.api.security import (
     DEFAULT_ALLOWED_ORIGINS,
@@ -33,6 +34,9 @@ def create_app(
         docs_url="/docs",
         redoc_url=None,
     )
+    # Middleware added last runs first. The error handler must sit *inside*
+    # CORSMiddleware so its 500 response still gets CORS headers.
+    application.add_middleware(UnhandledErrorMiddleware)
     application.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
