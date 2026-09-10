@@ -58,6 +58,27 @@ async def get_or_create_folder(
     account_id: UUID,
     remote_folder: RemoteFolder,
 ) -> Folder:
+    """Return the local row for ``remote_folder``, creating it if needed.
+
+    Implemented as an atomic upsert. A plain SELECT-then-INSERT races a
+    concurrent refresh or sync: both look, both miss, and the loser trips the
+    ``(account_id, name)`` unique constraint.
+    """
+    statement = (
+        sqlite_insert(Folder)
+        .values(
+            id=uuid4(),
+            account_id=account_id,
+            name=remote_folder.name,
+            delimiter=remote_folder.delimiter,
+        )
+        .on_conflict_do_update(
+            index_elements=[Folder.account_id, Folder.name],
+            set_={"delimiter": remote_folder.delimiter},
+        )
+    )
+    await session.execute(statement)
+
     folder = await session.scalar(
         select(Folder).where(
             Folder.account_id == account_id,
@@ -65,15 +86,7 @@ async def get_or_create_folder(
         )
     )
     if folder is None:
-        folder = Folder(
-            account_id=account_id,
-            name=remote_folder.name,
-            delimiter=remote_folder.delimiter,
-        )
-        session.add(folder)
-        await session.flush()
-    else:
-        folder.delimiter = remote_folder.delimiter
+        raise RuntimeError("folder upsert did not persist")
     return folder
 
 
