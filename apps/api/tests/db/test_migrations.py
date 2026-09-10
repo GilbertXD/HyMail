@@ -40,6 +40,23 @@ def test_migrations_create_expected_tables(tmp_path: Path) -> None:
         "sync_job",
     }.issubset(table_names)
 
+    with sqlite3.connect(db_path) as connection:
+        message_columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(message)")
+        }
+        job_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(sync_job)")
+        }
+        cursor_columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(sync_cursor)")
+        }
+
+    assert {"remote_missing", "remote_missing_at"}.issubset(message_columns)
+    assert "kind" in job_columns
+    assert "last_reconcile_at" in cursor_columns
+
 
 def test_migration_can_downgrade_to_base(tmp_path: Path) -> None:
     db_path = tmp_path / "downgrade-test.db"

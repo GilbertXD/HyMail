@@ -5,6 +5,7 @@ from uuid import UUID
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     DateTime,
     ForeignKey,
     Index,
@@ -29,6 +30,11 @@ class Message(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
         Index("ix_message_folder_id_date", "folder_id", "date"),
         Index("ix_message_folder_id_uid", "folder_id", "uid"),
+        Index(
+            "ix_message_folder_id_remote_missing",
+            "folder_id",
+            "remote_missing",
+        ),
     )
 
     account_id: Mapped[UUID] = mapped_column(
@@ -69,3 +75,14 @@ class Message(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     raw_headers: Mapped[str | None] = mapped_column(Text)
     body_text: Mapped[str | None] = mapped_column(Text)
     body_html: Mapped[str | None] = mapped_column(Text)
+    # Set by reconciliation when the UID is no longer present on the server.
+    # The row is kept rather than deleted so the change is explainable and can
+    # be undone if the message reappears (a move between folders, for example).
+    remote_missing: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+    remote_missing_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )

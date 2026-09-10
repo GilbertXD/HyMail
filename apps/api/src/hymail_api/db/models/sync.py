@@ -16,7 +16,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from hymail_api.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from hymail_api.domain.enums import SyncJobState, SyncPriority
+from hymail_api.domain.enums import SyncJobKind, SyncJobState, SyncPriority
 
 
 class SyncCursor(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -58,6 +58,9 @@ class SyncCursor(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     last_error: Mapped[str | None] = mapped_column(Text)
     last_sync_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    last_reconcile_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
 
@@ -138,6 +141,11 @@ class SyncJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
     )
     batch_id: Mapped[UUID] = mapped_column(nullable=False)
+    kind: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default=SyncJobKind.SYNC.value,
+    )
     state: Mapped[str] = mapped_column(
         String(32),
         nullable=False,

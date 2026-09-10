@@ -27,6 +27,13 @@ class SyncJobState(StrEnum):
     CANCELLED = "cancelled"
 
 
+class SyncJobKind(StrEnum):
+    """What a queued job should do to its folder."""
+
+    SYNC = "sync"
+    RECONCILE = "reconcile"
+
+
 class SyncPriority(IntEnum):
     """Lower runs first.
 
