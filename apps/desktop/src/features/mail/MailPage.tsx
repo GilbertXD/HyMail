@@ -31,6 +31,7 @@ import {
 import { formatDateTime, formatSyncState } from "../../lib/format";
 
 type MailView = "all" | string;
+type MailFilter = "all" | "unread" | "remote_missing";
 
 const ACTIVE_BATCH_STATES = ["queued", "running"];
 
@@ -40,7 +41,7 @@ export function MailPage() {
   const [messageId, setMessageId] = useState<string | null>(null);
   const [showSyncDetail, setShowSyncDetail] = useState(false);
   const [batchId, setBatchId] = useState<string | null>(null);
-  const [unreadOnly, setUnreadOnly] = useState(false);
+  const [filter, setFilter] = useState<MailFilter>("all");
 
   const accountQuery = useQuery({
     queryKey: ["account"],
@@ -280,10 +281,19 @@ export function MailPage() {
       ? allMessagesQuery.data ?? []
       : folderMessagesQuery.data ?? [];
 
-  const visibleMessages = unreadOnly
-    ? messages.filter((message) => !message.is_read)
-    : messages;
+  const visibleMessages = messages.filter((message) => {
+    if (filter === "unread") {
+      return !message.is_read;
+    }
+    if (filter === "remote_missing") {
+      return message.remote_missing;
+    }
+    return true;
+  });
   const unreadCount = messages.filter((message) => !message.is_read).length;
+  const missingCount = messages.filter(
+    (message) => message.remote_missing,
+  ).length;
 
   const messagesLoading =
     view === "all"
@@ -345,6 +355,7 @@ export function MailPage() {
               <button
                 key={folder.id}
                 type="button"
+                data-testid={`folder-${folder.name}`}
                 onClick={() => {
                   setView(folder.id);
                   setMessageId(null);
@@ -413,19 +424,20 @@ export function MailPage() {
           >
             {batchRunning ? "同步中..." : "同步全部"}
           </button>
-          <button
-            type="button"
-            className={[
-              "rounded border px-2 py-1 font-medium transition",
-              unreadOnly
-                ? "border-sky-300 bg-sky-50 text-sky-700 dark:border-gh-accent dark:bg-gh-accent-subtle dark:text-gh-accent"
-                : "border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-gh-border dark:text-gh-fg dark:hover:bg-gh-overlay",
-            ].join(" ")}
-            onClick={() => setUnreadOnly((current) => !current)}
-            data-testid="mail-unread-filter"
+          <select
+            value={filter}
+            onChange={(event) =>
+              setFilter(event.target.value as MailFilter)
+            }
+            data-testid="mail-filter"
+            className="rounded border border-slate-300 bg-white px-1 py-1 font-medium text-slate-600 dark:border-gh-border dark:bg-gh-overlay dark:text-gh-fg"
           >
-            只看未读
-          </button>
+            <option value="all">筛选：全部</option>
+            <option value="unread">只看未读（{unreadCount}）</option>
+            <option value="remote_missing">
+              只看远端异常（{missingCount}）
+            </option>
+          </select>
           <button
             type="button"
             className="rounded border border-slate-300 px-2 py-1 font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40 dark:border-gh-border dark:text-gh-fg dark:hover:bg-gh-overlay"
@@ -570,7 +582,9 @@ export function MailPage() {
                     className="shrink-0 rounded bg-red-50 px-2 py-0.5 text-red-700 dark:bg-gh-danger-subtle dark:text-gh-danger"
                     data-testid="message-remote-missing"
                   >
-                    远端已删除
+                    {message.moved_to_folder_name
+                      ? `可能已移动到 ${message.moved_to_folder_name}`
+                      : "远端已删除"}
                   </span>
                 ) : null}
                 <span className="truncate">
@@ -581,11 +595,13 @@ export function MailPage() {
           ))}
           {!visibleMessages.length && !messagesLoading ? (
             <div className="px-4 py-8 text-sm text-slate-400 dark:text-gh-fg-subtle">
-              {unreadOnly
+              {filter === "unread"
                 ? "没有未读邮件。"
-                : view === "all"
-                  ? "还没有同步到任何邮件。"
-                  : "这个文件夹还没有同步到邮件。"}
+                : filter === "remote_missing"
+                  ? "没有远端异常的邮件。"
+                  : view === "all"
+                    ? "还没有同步到任何邮件。"
+                    : "这个文件夹还没有同步到邮件。"}
             </div>
           ) : null}
         </div>
@@ -687,7 +703,9 @@ export function MailPage() {
                       <div>{formatDateTime(messageQuery.data.date)}</div>
                       {messageQuery.data.remote_missing ? (
                         <div className="pt-1 text-red-600 dark:text-gh-danger">
-                          这封邮件已不在服务器上，可能被其它设备删除或移动了。
+                          {messageQuery.data.moved_to_folder_name
+                            ? `这封邮件已不在这个文件夹里，可能在「${messageQuery.data.moved_to_folder_name}」——按 Message-ID 推断，仅供参考。`
+                            : "这封邮件已不在服务器上，可能被其它设备删除或移动了。"}
                         </div>
                       ) : null}
                       {messageQuery.data.outbox_state ? (

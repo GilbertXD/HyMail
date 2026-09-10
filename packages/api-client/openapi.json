@@ -1397,6 +1397,17 @@
             "title": "Remote Missing",
             "default": false
           },
+          "moved_to_folder_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Moved To Folder Name"
+          },
           "is_read": {
             "type": "boolean",
             "title": "Is Read",
@@ -1619,6 +1630,17 @@
             "type": "boolean",
             "title": "Remote Missing",
             "default": false
+          },
+          "moved_to_folder_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Moved To Folder Name"
           },
           "is_read": {
             "type": "boolean",

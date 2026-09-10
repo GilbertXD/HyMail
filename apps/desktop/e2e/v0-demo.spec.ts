@@ -199,3 +199,40 @@ test("starring a message reaches the server", async ({ page, request }) => {
     )
     .toContain("\\Flagged");
 });
+
+test("reconcile says where a moved message went", async ({
+  page,
+  request,
+}) => {
+  await page.goto("/setup");
+  await page.getByPlaceholder("you@example.com").fill("user@example.com");
+  await page.getByRole("combobox").selectOption("custom");
+  await page.getByPlaceholder("imap.example.com").fill("127.0.0.1");
+  await page.getByPlaceholder("993").fill(IMAP_PORT);
+  await page.getByRole("checkbox").uncheck();
+  await page.getByPlaceholder("IMAP 授权码").fill("secret");
+  await page.getByRole("button", { name: "保存账号" }).click();
+  await expect(page.getByText("账号已保存")).toBeVisible();
+
+  await page.getByRole("link", { name: "邮件" }).click();
+  await page.getByRole("button", { name: "刷新文件夹" }).click();
+
+  // Move UID 3 from INBOX to Sent, as another client would.
+  const moved = await request.post(`${API_BASE}/__e2e/messages/move`, {
+    data: { uid: 3, from_mailbox: "INBOX", to_mailbox: "Sent" },
+  });
+  expect(moved.ok()).toBeTruthy();
+  expect((await moved.json()).moved).toBe(true);
+
+  await page.getByTestId("mail-reconcile").click();
+
+  await expect(
+    page.getByText("可能已移动到 Sent").first(),
+  ).toBeVisible({ timeout: 20_000 });
+
+  // The message is genuinely present in its new folder too.
+  await page.getByTestId("folder-Sent").click();
+  await expect(page.getByText("E2E HTML").first()).toBeVisible({
+    timeout: 10_000,
+  });
+});

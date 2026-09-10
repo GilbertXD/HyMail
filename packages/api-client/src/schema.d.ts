@@ -535,6 +535,8 @@ export interface components {
              * @default false
              */
             remote_missing: boolean;
+            /** Moved To Folder Name */
+            moved_to_folder_name?: string | null;
             /**
              * Is Read
              * @default false
@@ -605,6 +607,8 @@ export interface components {
              * @default false
              */
             remote_missing: boolean;
+            /** Moved To Folder Name */
+            moved_to_folder_name?: string | null;
             /**
              * Is Read
              * @default false

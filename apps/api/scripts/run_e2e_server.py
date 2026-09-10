@@ -37,6 +37,8 @@ def make_raw_message(subject: str, body: str) -> bytes:
     message["From"] = "Alice <alice@example.com>"
     message["To"] = "Bob <bob@example.com>"
     message["Date"] = "Mon, 01 Jan 2024 00:00:00 +0000"
+    # Real mail carries one, and move detection has nothing else to match on.
+    message["Message-ID"] = f"<{subject.replace(' ', '.')}@example.com>"
     return message.as_bytes()
 
 
@@ -57,6 +59,7 @@ def make_html_message(subject: str) -> bytes:
     message["From"] = "Alice <alice@example.com>"
     message["To"] = "Bob <bob@example.com>"
     message["Date"] = "Mon, 01 Jan 2024 00:00:00 +0000"
+    message["Message-ID"] = f"<{subject.replace(' ', '.')}@example.com>"
     return message.as_bytes()
 
 
@@ -116,6 +119,15 @@ async def main() -> None:
             mailbox=str(payload.get("mailbox", "INBOX")),
         )
         return {"removed": removed}
+
+    @app.post("/__e2e/messages/move")
+    async def _move_message(payload: dict[str, object]) -> dict[str, object]:
+        new_uid = mock_server.move_message(
+            int(payload["uid"]),  # type: ignore[arg-type]
+            from_mailbox=str(payload.get("from_mailbox", "INBOX")),
+            to_mailbox=str(payload.get("to_mailbox", "Sent")),
+        )
+        return {"moved": new_uid is not None, "new_uid": new_uid}
 
     @app.get("/__e2e/messages/flags")
     async def _read_flags(uid: int, mailbox: str = "INBOX") -> dict[str, object]:
