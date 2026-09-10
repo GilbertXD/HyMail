@@ -125,3 +125,24 @@ modified UTF-7 乱码文件夹名就地修复。
 自动化测试覆盖：
 
     uv run pytest tests/sync/test_scheduler.py -v
+
+## 9. 对账（远端删除）
+
+先在 demo server 上删掉一封邮件。用 curl 或 PowerShell：
+
+    $body = '{"uid": 1, "mailbox": "INBOX"}'
+    Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/__e2e/messages/remove -Body $body -ContentType application/json
+
+（这个控制接口只存在于 `scripts/run_e2e_server.py`，正式服务里没有。）
+
+回到 /mail 点击「对账」：
+
+- 新邮件照常拉取，随后比对远端 UID 集合
+- 服务器上已不存在的邮件在列表和详情里显示「远端已删除」
+- 本地行保留，不是删除——这样变化可解释，也能撤销
+- 把邮件加回去再点一次「对账」，标记会自动消失
+
+自动化测试覆盖：
+
+    uv run pytest tests/sync/test_engine_reconcile.py -v
+
