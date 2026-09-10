@@ -371,6 +371,7 @@ class SyncEngine:
     ) -> SyncResult:
         owned = client is None
         active = client if client is not None else self._imap_client_factory()
+        attempt_started = time.monotonic()
         try:
             if owned:
                 await active.connect()
@@ -431,6 +432,7 @@ class SyncEngine:
                 prepared,
                 trace_id,
                 total_fetched,
+                duration_ms=int((time.monotonic() - attempt_started) * 1000),
             )
         finally:
             if owned:
@@ -588,6 +590,8 @@ class SyncEngine:
         prepared: _PreparedSync,
         trace_id: str,
         fetched_count: int,
+        *,
+        duration_ms: int,
     ) -> SyncResult:
         now = datetime.now(UTC)
         async with self._session_factory() as session, session.begin():
@@ -625,6 +629,7 @@ class SyncEngine:
                 state=SyncState.IDLE.value,
                 event_type="sync.completed",
                 fetched_count=fetched_count,
+                duration_ms=duration_ms,
             )
 
             return SyncResult(
@@ -638,6 +643,7 @@ class SyncEngine:
                 uidnext=cursor.uidnext,
                 attempts=0,
                 trace_id=trace_id,
+                duration_ms=duration_ms,
             )
 
     async def _mark_state(
