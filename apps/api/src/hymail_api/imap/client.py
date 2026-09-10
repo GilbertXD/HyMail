@@ -187,13 +187,27 @@ class ImapClient:
     async def _send_client_id(self) -> None:
         if self._client is None or not self._client_id:
             return
-        capabilities = await self.capabilities()
-        if "ID" not in capabilities:
+        protocol = getattr(self._client, "protocol", None)
+        if protocol is None:
             return
+
+        pairs = " ".join(
+            f'"{key}" "{value}"'
+            for key, value in self._client_id.items()
+        )
+        command_text = f"({pairs})"
+
         try:
-            await self._client.id(**self._client_id)
+            command = aioimaplib.Command(
+                "ID",
+                protocol.new_tag(),
+                command_text,
+                loop=protocol.loop,
+            )
+            response = await protocol.execute(command)
         except Exception as exc:
             raise self._map_exception(exc, "id") from exc
+        self._ensure_response_ok(response, "id")
 
     def _require_client(self) -> Any:
         if self._client is None:

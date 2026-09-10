@@ -65,13 +65,22 @@ def build_imap_client(account: Account) -> ImapClient:
         if account.secret_encrypted
         else ""
     )
+    client_id = (
+        {
+            "name": "HyMail",
+            "version": "0.0.1",
+            "vendor": "HyMail",
+        }
+        if account.provider.lower() in {"163", "qq"}
+        else None
+    )
     return ImapClient(
         host=account.imap_host,
         port=account.imap_port or 993,
         ssl=account.imap_ssl,
         username=account.username or account.email,
         password=secret,
-        client_id={"name": "HyMail", "version": "0.0.1"},
+        client_id=client_id,
     )
 
 
