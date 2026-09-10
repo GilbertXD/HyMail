@@ -37,6 +37,7 @@ def test_migrations_create_expected_tables(tmp_path: Path) -> None:
         "message",
         "sync_cursor",
         "sync_event",
+        "sync_job",
     }.issubset(table_names)
 
 

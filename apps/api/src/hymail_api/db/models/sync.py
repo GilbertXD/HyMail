@@ -16,6 +16,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from hymail_api.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from hymail_api.domain.enums import SyncJobState, SyncPriority
 
 
 class SyncCursor(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -104,3 +105,60 @@ class SyncEvent(Base):
         server_default=func.now(),
         nullable=False,
     )
+
+
+class SyncJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A durable request to sync one folder.
+
+    The queue lives in the database rather than in memory so that a restart
+    resumes unfinished work and so that ``attempts``, backoff and cancellation
+    survive a crash. ``batch_id`` groups the jobs of a single "sync
+    everything" request; batch progress is an aggregate over it.
+    """
+
+    __tablename__ = "sync_job"
+    __table_args__ = (
+        Index(
+            "ix_sync_job_account_state_priority",
+            "account_id",
+            "state",
+            "priority",
+        ),
+        Index("ix_sync_job_batch_id", "batch_id"),
+        Index("ix_sync_job_folder_id", "folder_id"),
+    )
+
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("account.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    folder_id: Mapped[UUID] = mapped_column(
+        ForeignKey("folder.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    batch_id: Mapped[UUID] = mapped_column(nullable=False)
+    state: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=SyncJobState.QUEUED.value,
+    )
+    priority: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=int(SyncPriority.USER),
+    )
+    attempts: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+    last_error: Mapped[str | None] = mapped_column(Text)
+    # Set when a retry has to wait for its backoff to elapse.
+    not_before: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # A running job owns a lease; an expired lease means the worker died.
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
