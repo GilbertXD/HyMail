@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "HyMail API"
-    version: str = "0.0.1"
+    version: str = "0.1.0"
     environment: str = "development"
     host: str = "127.0.0.1"
     port: int = 8000

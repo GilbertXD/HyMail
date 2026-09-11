@@ -1,6 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from hymail_api.core.config import settings
 from hymail_api.db.models.account import Account
 from hymail_api.imap.client import ImapClient
 from hymail_api.imap.presets import get_preset
@@ -68,7 +69,7 @@ def build_imap_client(account: Account) -> ImapClient:
     client_id = (
         {
             "name": "HyMail",
-            "version": "0.0.1",
+            "version": settings.version,
             "vendor": "HyMail",
         }
         if account.provider.lower() in {"163", "qq"}

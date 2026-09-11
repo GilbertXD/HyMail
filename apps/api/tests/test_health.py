@@ -1,5 +1,6 @@
 from httpx import ASGITransport, AsyncClient
 
+from hymail_api.core.config import settings
 from hymail_api.main import app
 
 
@@ -10,8 +11,10 @@ async def test_health_returns_ok() -> None:
         response = await client.get("/health")
 
     assert response.status_code == 200
+    # The contract is that health reports the configured version, not that the
+    # version happens to be some particular literal.
     assert response.json() == {
         "status": "ok",
         "service": "hymail-api",
-        "version": "0.0.1",
+        "version": settings.version,
     }
