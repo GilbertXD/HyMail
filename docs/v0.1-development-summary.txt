@@ -1,0 +1,305 @@
+HyMail v0.1 开发过程与设计决策总结
+====================================
+
+一、版本定位
+------------
+v0.0.1 交付的是"单文件夹、内存态"的同步切片：一个账号、一次一个文件夹、
+任务表在内存里、只能收信。
+
+v0.1 把它补成一个可排队、可对账、可写回、可观测的同步引擎：
+
+  可排队  —— 任务落库，进程重启后继续
+  可对账  —— 能发现远端删了什么、改了什么、动去了哪里
+  可写回  —— 已读与星标可以推回服务器，且不怕崩溃
+  可观测  —— 指标、队列、事件时间线、Outbox 面板
+
+对照 PLAN.md 的 v0.1 七条，全部落地。
+
+
+二、本版范围（五个环节）
+------------------------
+M1  持久化同步队列 + 账号级互斥 + 一键同步所有文件夹的新邮件
+M2  RECONCILE 轻量对账：新邮件、丢失 UID、远端删除
+M3  双向旗标 + 可靠 Outbox（已读 / 星标）
+M4  删除与移动对账
+M5  结构化指标
+
+每个环节都能独立演示、独立测试、独立回滚，保持 v0.0.1 的同步主链路不被破坏。
+
+
+三、数据库迁移
+--------------
+0002_sync_job    持久化任务队列（状态 / 优先级 / 退避 / 租约）
+0003_reconcile   message.remote_missing、sync_cursor.last_reconcile_at、sync_job.kind
+0004_outbox      message.is_read / is_starred、outbox_action 表、last_flags_reconcile_at
+0005_moves       message.moved_to_folder_id + (account_id, message_id) 索引
+
+0005 是本版唯一需要重建表的迁移：SQLite 不能 ALTER 加外键，只能走 batch 模式
+（copy-and-move）。因此专门加了测试验证重建没有丢掉既有约束——账号与文件夹的
+CASCADE、新的 SET NULL、以及 (account_id, folder_id, uid) 唯一约束（靠真的插一条
+重复数据、断言抛 IntegrityError 来证明，而不是只看 schema）。
+
+当前 head：0005_moves。升级：uv run alembic upgrade head
+
+注意：后端不会自动建表。README 之前完全没写这一步，本版补上了。
+
+
+四、关键设计决策
+----------------
+1. 任务说"还要做什么"，游标说"已经做到哪"
+   队列和游标是两件事。每批 FETCH 后 message upsert、游标前进、事件写入仍在
+   同一个事务里提交，所以任务重跑不会重复拉取，崩溃也能从最后一次提交续上。
+   v0.0.1 的事务边界一行没改——这是整个 v0.1 敢动这么多东西的前提。
+
+2. 账号级互斥做在认领查询里，而不是靠约定
+   认领语句排除掉"已有 running 任务的账号"，也排除掉"已经有 inflight 写动作的
+   账号"。所以同步和 Outbox 两个服务共享同一个不变量：同一账号永远只有一条
+   IMAP 连接。跨服务的一致性是数据库给的，不是靠调用方自觉。
+
+3. 一个批次只 LOGIN 一次
+   SyncEngine.sync_folder 接受调用方传入的已连接 client，worker 按 batch_id
+   复用连接。代价是共享连接无法在引擎内部重连，所以共享模式只试一次、退避重试
+   上移到队列——而这本来就更对：持久化队列的重试也应该跨重启存活。
+   注意：调高 max_workers 后每个 worker 各占一条空闲连接，"一批一次 LOGIN"
+   只在默认单 worker 下严格成立。
+
+4. 失败分类驱动调度，而不只是记日志
+   认证失败 -> 账号标记 auth_expired 并清空该账号队列（继续跑只会重复失败）
+   文件夹不存在 -> 直接 failed，不消耗重试次数
+   网络 / 限流 -> 指数退避后重新排队
+
+5. 对账标记而不是删除
+   远端没有的邮件标记 remote_missing，本地行保留。变化因此可解释、可撤销；
+   邮件重新出现时标记自动清掉。界面上也据此区分"远端已删除"和"可能已移动到 X"。
+
+6. 安全阀要能区分"空"和"坏"
+   最初规则是"远端集合为空而本地非空就跳过"。这会让任何被清空的文件夹永远
+   无法对账——一个只有 1 封邮件的文件夹清空后，我们永远学不到。改成看 SELECT
+   的 EXISTS：服务器说文件夹是空的（EXISTS 0）就是真实答案，照常对账；只有
+   SELECT 说有邮件而 SEARCH 一条 UID 都列不出来（自相矛盾）才跳过。
+
+7. 移动归属是推断，不是事实
+   没有 UIDPLUS 就没有 COPYUID，唯一线索是 Message-ID，而 Message-ID 本来
+   就可能合法重复——抄送自己的邮件同时存在于"已发送"和"收件箱"。所以只在
+   目标唯一时才下结论，界面上写"**可能**已移动到 X"。每次对账都重算，目标
+   不再持有该邮件时旧说明会被清掉。
+
+8. 乐观更新只有在意图能扛过崩溃时才诚实
+   outbox_action 行在界面变化之前写入。同一条消息同一属性的 pending 动作会被
+   最新值取代，所以"标已读 -> 标未读"只发一次写，而不是两条互相矛盾的写。
+
+9. 不静默撤销用户的点击
+   永久失败只标记 failed 并在 Outbox 面板提示，等用户重试或丢弃，不自动回滚。
+   服务器可能只是暂时不可用，把用户的点击改回去更糟。丢弃才回滚，且回滚源是
+   flags_json——服务器最后一次报告的旗标，不是猜的。
+
+10. 队列里的本地修改优先于服务器
+    对账拉远端 FLAGS 时，跳过所有还有待发送动作的消息。服务器还没听说这次
+    点击，信它的答案就等于把用户刚做的操作悄悄撤销。
+
+11. 指标里每个数字取自拥有它的表
+    运行数与重试次数来自 sync_job（只有它知道 attempts 和终态），拉取量与耗时
+    来自 sync.completed 事件（只有它知道这一趟拉了多少）。不从一张表里硬凑。
+
+
+五、开发过程中发现并修掉的 Bug
+------------------------------
+1. 文件夹名乱码：IMAP modified UTF-7 未解码
+   现象：QQ / 163 的中文文件夹显示成 &XfJSIJZk- 这类。
+   修复：新增 imap/utf7.py。
+   关键坑：不能只解不编——SELECT 前必须把中文名编码回 modified UTF-7，否则
+   改好显示之后同步直接失败。两个方向放在同一个模块里互相约束。
+   配套把 mock server 也改成真实服务器行为（LIST 发编码名、SELECT 收编码名），
+   测试向量取自真实抓包。
+
+2. 刷新文件夹 500：改名没落库就去做查找
+   现象：点击"刷新文件夹"报 Failed to fetch（浏览器里完全没有错误信息）。
+   原因：session 是 autoflush=False，normalize_folder_names 改了内存里的名字
+   但没 flush，随后的 get_or_create_folder 按旧名字查不到，于是又插一条同名行，
+   提交时改名 UPDATE 与新 INSERT 撞 (account_id, name) 唯一约束。
+   修复：改名后显式 flush。
+   教训：单元测试红了、修好、绿了；但路由级测试在**注入 bug 的情况下依然通过**，
+   因为 get_or_create_folder 只在真正插入时才 flush，而测试里第一个远端文件夹
+   本地不存在，插入顺带把待提交的改名也 flush 掉了。真实场景里 QQ 返回的前 5 个
+   文件夹本地都已存在，谁都不会触发 flush，直到最后那个中文名才炸。
+   回归测试必须复现生产的触发条件，否则绿灯是假的。
+
+3. 未捕获异常的 500 不带 CORS 头
+   现象：浏览器只显示"Failed to fetch"，后端堆栈完全看不到。
+   原因：Starlette 的 ServerErrorMiddleware 在 CORSMiddleware 外面，未捕获异常
+   直接由它生成 500，绕过了 CORS 的响应包装。
+   修复：新增 UnhandledErrorMiddleware，注册在 CORSMiddleware 内侧，把异常转成
+   带 CORS 头的 500，堆栈进服务端日志。以后任何 500 都会显示成 500。
+
+4. get_or_create_folder 的 SELECT-then-INSERT 竞态
+   并发刷新 / 同步时两个事务都查不到、都插入，后者撞唯一约束。
+   修复：改成原子 upsert（INSERT ... ON CONFLICT DO UPDATE），和 upsert_messages
+   一致。
+   说明：这个竞态只在两个独立进程同时写库时观察到，进程内三路并发复现不出来。
+   我把那个"证明"它的测试删掉了——它在有 bug 和没 bug 的代码上都通过，属于
+   假绿灯，留着只会给人虚假信心。
+
+5. aioimaplib 的 uid() 有命令白名单
+   client.uid("SEARCH", "ALL") 被库直接拒绝，只放行 COPY / FETCH / EXPUNGE / STORE。
+   修复：改用 uid_search("ALL", charset=None)，产生干净的 "UID SEARCH ALL"。
+
+6. aioimaplib 会剥掉 SEARCH 响应的未标记前缀
+   lines 实际是 [b'1 2', b'SEARCH completed']——未标记数据没了 * SEARCH 前缀，
+   标记行却混在同一个列表里。
+   修复：解析函数同时容忍两种形状，并拒绝任何非纯数字的行，避免把服务器的
+   抱怨当成 UID 列表。10 个参数化测试钉死。
+
+7. mock server 把 RFC822.SIZE 当成正文请求
+   include_body 用子串匹配 "RFC822"，于是每次纯 FLAGS 的 FETCH 都白送整封邮件。
+   真实服务器不会这样。
+   修复：改用正则 RFC822(?!\.)。
+
+8. mock server 的 UIDNEXT 是全局的
+   真实 IMAP 的 UIDNEXT 是每文件夹的。这个不忠实让"移动邮件"的测试语义不对。
+   修复：改成按文件夹计数，move_message 从目标文件夹的序列取 UID。
+
+9. duration_ms 从 v0.0.1 起就是个永远为 NULL 的列
+   write_event 收这个参数，但从来没人传过；SyncResult.duration_ms 算完就丢。
+   修复：每次成功同步写入本次尝试耗时，指标里的平均/P95 才有数据。
+   回归测试断言 avg_duration_ms is not None，否则它会再次悄悄变回 NULL。
+
+10. 百分位 off-by-one
+    实现用了 int(n * p)，测试期望中位数是 50、实现给出 60。
+    nearest-rank 的定义是 ceil(p * n) 而不是 p * n。改的是实现，因为标准定义
+    站在测试那一边。
+
+11. 移动归属把"幽灵"当成证据
+    候选查询会把其它文件夹里已经标记 remote_missing 的行也算作"邮件在那边"，
+    于是邮件移回原文件夹后，目标文件夹里的幽灵让说明永远清不掉。
+    修复：只有未被标记缺失的行才算证据。已变异验证。
+
+12. 测试数据缺 Message-ID
+    API 测试和 E2E 的构造邮件都没有 Message-ID，所以移动检测压根没东西可匹配。
+    真实邮件都有，测试数据也该有。三处 helper 一并补上。
+
+13. 乐观冲突测试的假绿灯
+    "对账不得撤销未发出的本地点击"这个测试最初只往 outbox 插了一行，没有同步做
+    乐观本地更新。结果本地和远端压根没分歧，把守卫注释掉测试照样通过。
+    修复：helper 必须同时改本地值（真实写路径就是这样两半），补上之后注释守卫
+    立刻失败。
+
+14. fixture teardown 顺序导致 Event loop is closed
+    队列 worker 在 engine 被 dispose 之后还在查询，aiosqlite 线程往已关闭的
+    loop 投递结果。
+    修复两件事：测试 fixture 显式依赖 session_factory 以确定 teardown 顺序；
+    服务改成协作式关闭——先置停止标志并唤醒，给 worker 一个干净退出的机会，
+    超时再强杀。取消落在查询中间正是产生该警告的原因。
+
+15. PowerShell 传参把 git commit message 拆坏了
+    message 里有内嵌双引号，PowerShell 5.1 传给原生程序时把它搞坏，git 把消息
+    碎片当文件路径 -> 第一个提交失败，但它 add 过的文件仍在暂存区，被下一个
+    提交一并卷走，导致 HEAD 的改动和消息对不上。
+    修复：用 git commit --amend 把消息改成与新内容一致，没有留下说谎的历史。
+    教训：PowerShell 里给 git 传 -m 不要用内嵌双引号。
+
+
+六、测试与验证
+--------------
+后端  39 -> 154 个用例（ruff + pytest）
+前端  Vitest  4 -> 21
+E2E   Playwright 1 -> 6
+
+本版新增的守卫都做了变异验证（把修复注释掉，确认对应测试真的失败）：
+  - 批次事务边界（崩溃恢复 / 幂等）
+  - UTF-7 的改名列查找
+  - 账号级互斥的认领排除
+  - 对账安全阀
+  - 幽灵不作为证据
+  - 乐观冲突规则
+  - modified UTF-7 编解码
+
+E2E 方面：
+  - 端口改为可用环境变量覆盖，使测试能与正在运行的开发服务器共存，
+    不必让开发者先停掉自己的后端。
+  - 固定 workers: 1 —— 这套用例共用一个后端和一个 SQLite 库，文件之间并行
+    会互相污染（曾导致一次真实的虚假冲突）。
+  - 测试服务器提供 /__e2e/messages/{remove,flags,move} 控制接口，
+    定义在 scripts/run_e2e_server.py 而不是应用里，所以不可能随产品发布。
+
+
+七、已知限制
+------------
+- 只支持一个账号
+- 只实现收信，不实现发信、回复、转发、附件
+- 写操作只支持已读与星标；发信、移动、删除的写回尚未实现
+- 移动只能被观察到，不能发起
+- 移动检测靠 Message-ID 推断，只在目标唯一时给结论；没有 Message-ID 或同时
+  命中多个文件夹时不猜测
+- 对账只在 SELECT 与 SEARCH 自相矛盾时跳过标记；服务器说文件夹为空就照常对账
+- 发送失败不会自动回滚，等用户在 Outbox 里重试或丢弃
+- 不支持 CONDSTORE / QRESYNC / MOVE / UIDPLUS / IDLE
+- 更换邮箱后不会清理上一个邮箱遗留的文件夹和邮件，需等 v0.4 多账号一并解决
+  （"同步全部"会跳过远端已不存在的文件夹，所以不会因此产生一堆失败）
+- 指标是滚动窗口（默认 24 小时，最多 30 天）的实时聚合，不做历史归档
+- HTML 正文已做 sandbox 隔离和远程图片屏蔽，但尚未接入 DOMPurify 清洗
+- 暂不提供安装包、自动更新、代码签名；Tauri 仅开发模式集成
+
+
+八、本版 tag 与版本号
+--------------------
+版本号统一到 0.1.0，覆盖以下位置：
+
+  apps/api/src/hymail_api/core/config.py    settings.version（唯一运行时来源）
+  apps/api/src/hymail_api/__init__.py       __version__ 改为从 settings 派生
+  apps/api/src/hymail_api/services/accounts.py  IMAP ID 的客户端版本号
+  apps/api/pyproject.toml
+  apps/api/uv.lock                          （uv lock 重新生成）
+  package.json / apps/desktop/package.json / packages/api-client/package.json
+  apps/desktop/src-tauri/Cargo.toml 与 tauri.conf.json（原本就是 0.1.0）
+  packages/api-client/openapi.json          （重新生成）
+
+顺带修掉两处重复来源：__version__ 之前是一份没人读的字面量，IMAP ID 里又是
+一份；现在都从 settings.version 派生，不会再各自漂移。test_health 原本硬编码
+版本字符串，每次发版都会无谓地失败，改成断言"health 报告的是配置里的版本"
+这一契约本身。
+
+v0.0.1 -> v0.1 共 27 个提交，按 5 个环节拆分，每个环节内部再按能力拆分。
+
+
+九、后续路线
+------------
+v0.2  可靠 Outbox 补全：发信与 append_sent、移动邮件（优先 MOVE，否则
+      COPY + STORE + EXPUNGE）、移动的写回
+v0.3  本地索引与搜索：FTS5、index_job 队列、中文分词方案验证
+v0.4  多账号与提供商适配：账号隔离、OAuth2、更换邮箱后的数据清理
+v0.5  高级 IMAP 能力：CAPABILITY 快照、CONDSTORE / QRESYNC、UIDPLUS、IDLE
+v1.0  桌面产品化：安装包、签名、自动更新、安全 HTML 渲染
+
+
+十、常用命令
+------------
+端口同 v0.0.1：FastAPI 127.0.0.1:8000，Vite 127.0.0.1:5173，Mock IMAP 127.0.0.1:11430。
+
+升级数据库（首次运行或每次升级后都必须执行）：
+
+    Set-Location D:\HyMail\apps\api
+    uv run alembic upgrade head
+
+后端：
+
+    Set-Location D:\HyMail\apps\api
+    uv run uvicorn hymail_api.main:app --reload --host 127.0.0.1 --port 8000
+
+前端：
+
+    Set-Location D:\HyMail
+    pnpm --filter @hymail/desktop dev --host 127.0.0.1
+
+演示（含 Mock IMAP 与故障注入）：
+
+    Set-Location D:\HyMail\apps\api
+    uv run python scripts/run_demo_server.py --reset --messages 20
+
+测试：
+
+    uv run ruff check . && uv run pytest
+    pnpm --filter @hymail/desktop lint
+    pnpm --filter @hymail/desktop typecheck
+    pnpm --filter @hymail/desktop test
+    pnpm --filter @hymail/desktop build
+    pnpm --filter @hymail/desktop test:e2e
